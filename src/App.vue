@@ -11,7 +11,7 @@
     ElDropdownMenu,
     ElDropdownItem
   } from 'element-plus'
-  import { Plus, Delete, Search } from '@element-plus/icons-vue'
+  import { Plus, Delete, Search, Setting } from '@element-plus/icons-vue'
   import type { FilterNodeMethodFunction, TreeInstance } from 'element-plus'
   import { useProxyStore } from './stores/proxy'
   import type { ProxyGroup, ProxyRule } from './types/proxy'
@@ -92,11 +92,39 @@
     label: 'label'
   }
 
+  // 递归查找第一个被启用的代理规则
+  const findFirstEnabledRule = (
+    groups: ProxyGroup[]
+  ): { groupId: string; ruleId: string } | null => {
+    for (const group of groups) {
+      // 先检查当前分组的代理规则
+      const enabledRule = group.rules.find(rule => rule.enabled)
+      if (enabledRule) {
+        return { groupId: group.id, ruleId: enabledRule.id }
+      }
+
+      // 如果没有找到，递归检查子分组
+      if (group.children) {
+        const result = findFirstEnabledRule(group.children)
+        if (result) return result
+      }
+    }
+    return null
+  }
+
   onMounted(async () => {
     await proxyStore.loadConfig()
     proxyEnabled.value = proxyStore.enabled
 
-    if (groups.value.length > 0) {
+    // 查找第一个被启用的代理规则
+    const firstEnabledRule = findFirstEnabledRule(groups.value)
+
+    if (firstEnabledRule) {
+      // 如果找到启用的代理规则，激活它
+      activeGroupId.value = firstEnabledRule.groupId
+      activeItemId.value = firstEnabledRule.ruleId
+    } else if (groups.value.length > 0) {
+      // 如果没有启用的代理规则，激活第一个分组
       activeGroupId.value = groups.value[0].id
       activeItemId.value = groups.value[0].id
     }
@@ -173,6 +201,15 @@
     // 现在只有代理规则会有复选框
     if (data.type === 'rule') {
       proxyStore.updateRule(data.groupId, data.id, { enabled: data.enabled })
+
+      // 如果当前没有选中的代理规则，自动激活第一个被启用的代理
+      if (!activeItemId.value || activeItemId.value === activeGroupId.value) {
+        const firstEnabledRule = findFirstEnabledRule(groups.value)
+        if (firstEnabledRule) {
+          activeGroupId.value = firstEnabledRule.groupId
+          activeItemId.value = firstEnabledRule.ruleId
+        }
+      }
     }
   }
 
@@ -197,6 +234,8 @@
       handleDuplicateRule(ruleData)
     } else if (command === 'edit') {
       handleEditRule(ruleData)
+    } else if (command === 'delete') {
+      handleDeleteRule(ruleData)
     }
   }
 
@@ -265,6 +304,20 @@
     activeItemId.value = ruleData.id
   }
 
+  const handleDeleteRule = (ruleData: any) => {
+    // 删除代理规则
+    proxyStore.deleteRule(ruleData.groupId, ruleData.id)
+
+    // 如果删除的是当前选中的规则，清空选中状态
+    if (activeItemId.value === ruleData.id) {
+      activeItemId.value = ''
+      activeItemName.value = ''
+      jsonConfig.value = JSON.stringify(defaultJsonConfig, null, 2)
+    }
+
+    ElMessage.success('代理规则已删除')
+  }
+
   const handleSaveItemName = () => {
     if (isActiveGroup.value && activeGroupId.value && activeItemName.value.trim()) {
       proxyStore.updateGroup(activeGroupId.value, { name: activeItemName.value.trim() })
@@ -279,6 +332,78 @@
     proxyStore.deleteGroup(groupId)
     if (activeGroupId.value === groupId) {
       activeGroupId.value = groups.value.length > 0 ? groups.value[0].id : ''
+    }
+  }
+
+  // 导出配置功能
+  const handleExportConfig = () => {
+    try {
+      const exportData = {
+        version: '1.0.0',
+        exportTime: new Date().toISOString(),
+        config: proxyStore.config
+      }
+
+      const dataStr = JSON.stringify(exportData, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(dataBlob)
+      link.download = `proxy-config-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+
+      URL.revokeObjectURL(link.href)
+      ElMessage.success('配置导出成功')
+    } catch (error) {
+      console.error('导出配置失败:', error)
+      ElMessage.error('导出配置失败')
+    }
+  }
+
+  // 导入配置功能
+  const handleImportConfig = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async event => {
+      const file = (event.target as HTMLInputElement).files?.[0]
+      if (!file) return
+
+      try {
+        const text = await file.text()
+        const importData = JSON.parse(text)
+
+        // 验证导入数据的格式
+        if (!importData.config || !importData.config.groups) {
+          throw new Error('无效的配置文件格式')
+        }
+
+        // 确认是否要覆盖现有配置
+        const confirmMessage = '导入配置将覆盖现有配置，是否继续？'
+        if (confirm(confirmMessage)) {
+          // 更新配置
+          proxyStore.config.enabled = importData.config.enabled
+          proxyStore.config.groups = importData.config.groups
+
+          // 保存配置
+          await proxyStore.saveConfig()
+
+          ElMessage.success('配置导入成功')
+        }
+      } catch (error) {
+        console.error('导入配置失败:', error)
+        ElMessage.error(`导入配置失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      }
+    }
+    input.click()
+  }
+
+  // 处理导出导入命令
+  const handleExportImportCommand = (command: string) => {
+    if (command === 'export') {
+      handleExportConfig()
+    } else if (command === 'import') {
+      handleImportConfig()
     }
   }
 
@@ -346,17 +471,30 @@
     <div class="sidebar">
       <div class="sidebar-header">
         <h3>代理分组</h3>
-        <el-dropdown @command="handleDropdownCommand">
-          <el-icon class="add-icon">
-            <Plus />
-          </el-icon>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="category"> 创建分类 </el-dropdown-item>
-              <el-dropdown-item command="proxy"> 创建代理 </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <div class="header-actions">
+          <el-dropdown @command="handleDropdownCommand">
+            <el-icon class="add-icon">
+              <Plus />
+            </el-icon>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="category"> 创建分类 </el-dropdown-item>
+                <el-dropdown-item command="proxy"> 创建代理 </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-dropdown @command="handleExportImportCommand">
+            <el-icon class="export-import-icon">
+              <Setting />
+            </el-icon>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="export"> 导出配置 </el-dropdown-item>
+                <el-dropdown-item command="import"> 导入配置 </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </div>
 
       <!-- 搜索框 -->
@@ -426,6 +564,7 @@
                       <el-dropdown-menu>
                         <el-dropdown-item command="duplicate"> 复制代理 </el-dropdown-item>
                         <el-dropdown-item command="edit"> 编辑代理 </el-dropdown-item>
+                        <el-dropdown-item command="delete" divided> 删除代理 </el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
@@ -536,14 +675,21 @@
         color: $color-12;
       }
 
-      .add-icon {
-        font-size: 18px;
-        color: $color-8;
-        cursor: pointer;
-        transition: color 0.2s;
+      .header-actions {
+        display: flex;
+        gap: $space-mini;
+        align-items: center;
 
-        &:hover {
-          color: $color-10;
+        .add-icon,
+        .export-import-icon {
+          font-size: 18px;
+          color: $color-8;
+          cursor: pointer;
+          transition: color 0.2s;
+
+          &:hover {
+            color: $color-10;
+          }
         }
       }
     }
