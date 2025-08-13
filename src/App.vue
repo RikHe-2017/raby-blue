@@ -523,7 +523,17 @@
           :filter-node-method="filterNode"
         >
           <template #default="{ node, data }">
-            <div class="tree-node" @click.stop="handleNodeClick(data)">
+            <div
+              class="tree-node"
+              :class="{
+                active:
+                  (data.type === 'group' &&
+                    data.id === activeGroupId &&
+                    data.id === activeItemId) ||
+                  (data.type === 'rule' && data.id === activeItemId)
+              }"
+              @click.stop="handleNodeClick(data)"
+            >
               <div class="node-content">
                 <!-- 只在代理规则显示复选框 -->
                 <el-checkbox
@@ -713,7 +723,7 @@
         align-items: center;
         justify-content: space-between;
         width: 100%;
-        padding: $space-mini 0;
+        padding: 0 $space-small;
 
         .node-content {
           display: flex;
@@ -915,7 +925,9 @@
     }
 
     .el-tree-node.is-current > .el-tree-node__content {
-      background-color: $color-4;
+      background-color: $theme-primary-light !important;
+      border-left: 3px solid $theme-primary;
+      padding-left: $space-small;
     }
 
     .el-tree-node__expand-icon {
@@ -925,6 +937,26 @@
     .el-tree-node__label {
       font-size: $font-size-default;
       color: $color-12;
+    }
+  }
+
+  // 当前激活节点的特殊样式
+  .tree-node.active {
+    background-color: $theme-primary;
+    border-radius: $radius-small;
+
+    .node-label {
+      font-weight: 500;
+      color: #fff !important;
+    }
+
+    .action-icon {
+      opacity: 1;
+      color: $theme-primary;
+
+      &:hover {
+        color: $theme-primary-hover;
+      }
     }
   }
 </style>
