@@ -1,8 +1,7 @@
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import fs from 'fs'
-import { createWriteStream } from 'fs'
-import archiver from 'archiver'
+import { execSync } from 'child_process'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -47,13 +46,13 @@ async function buildExtension() {
       console.log('✅ 复制图标文件')
     }
 
-    // 创建dist-extension目录
-    const extensionDir = resolve(__dirname, '../dist-extension')
-    if (!fs.existsSync(extensionDir)) {
-      fs.mkdirSync(extensionDir, { recursive: true })
+    // 创建dist-crx目录
+    const crxDir = resolve(__dirname, '../dist-crx')
+    if (!fs.existsSync(crxDir)) {
+      fs.mkdirSync(crxDir, { recursive: true })
     }
 
-    // 复制所有文件到dist-extension目录
+    // 复制所有文件到dist-crx目录
     const copyDirectory = (src, dest) => {
       if (!fs.existsSync(dest)) {
         fs.mkdirSync(dest, { recursive: true })
@@ -73,95 +72,112 @@ async function buildExtension() {
       })
     }
 
-    copyDirectory(distDir, extensionDir)
-    console.log('✅ 复制所有文件到dist-extension目录')
+    copyDirectory(distDir, crxDir)
+    console.log('✅ 复制所有文件到dist-crx目录')
 
-    // 创建ZIP文件
-    const zipPath = resolve(extensionDir, 'raby-extension.zip')
-    const output = createWriteStream(zipPath)
-    const archive = archiver('zip', { zlib: { level: 9 } })
-
-    output.on('close', () => {
+    // 生成.crx文件
+    generateCrxFile(crxDir).then(() => {
       console.log('✅ 扩展构建完成！')
-      console.log('📁 输出目录: dist-extension/')
-      console.log('📦 扩展文件: dist-extension/raby-extension.zip')
-      console.log('📦 解压目录: dist-extension/ (可直接加载)')
-
-      // 生成安装说明
-      generateInstallInstructions()
+      console.log('📁 输出目录: dist-crx/')
+      console.log('📦 扩展文件: dist-crx/Raby.crx')
     })
-
-    archive.on('error', err => {
-      throw err
-    })
-
-    archive.pipe(output)
-    archive.directory(extensionDir, false)
-    archive.finalize()
   } catch (error) {
     console.error('❌ 构建失败:', error)
     process.exit(1)
   }
 }
 
-// 生成安装说明
-function generateInstallInstructions() {
-  const instructions = `# Raby 浏览器扩展 - 安装说明
+// 生成.crx文件
+async function generateCrxFile(extensionDir) {
+  try {
+    console.log('🔧 开始生成.crx文件...')
 
-## 构建完成！
+    // 检查Chrome是否安装
+    let chromePath = ''
+    try {
+      // macOS - 检查常见的Chrome路径
+      const possiblePaths = [
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+      ]
 
-扩展已成功构建，有两种安装方式：
+      for (const path of possiblePaths) {
+        if (fs.existsSync(path)) {
+          chromePath = path
+          break
+        }
+      }
 
-### 方式1：加载已解压的扩展程序（推荐）
-1. 打开Chrome浏览器
-2. 进入扩展管理页面：chrome://extensions/
-3. 开启"开发者模式"
-4. 点击"加载已解压的扩展程序"
-5. 选择 \`dist-extension\` 目录
-6. 点击"选择文件夹"确认安装
+      // 如果没找到，尝试使用which命令查找
+      if (!chromePath) {
+        try {
+          const result = execSync('which google-chrome', { encoding: 'utf8' }).trim()
+          if (result) {
+            chromePath = result
+          }
+        } catch (error) {
+          // which命令失败，继续使用默认路径
+        }
+      }
+    } catch (error) {
+      console.log('⚠️ 检查Chrome路径时出错:', error.message)
+    }
 
-### 方式2：使用ZIP文件
-1. 解压 \`raby-extension.zip\` 文件
-2. 按照方式1的步骤加载解压后的目录
+    if (!chromePath) {
+      console.log('⚠️ 未找到Chrome浏览器，跳过.crx文件生成')
+      console.log('📝 请手动使用Chrome的打包扩展功能生成.crx文件')
+      return
+    }
 
-## 功能特性
+    const crxPath = resolve(extensionDir, 'Raby.crx')
+    const pemPath = resolve(extensionDir, 'Raby.pem')
 
-- 🔄 代理请求重定向
-- 📁 分组管理
-- ⚙️ 配置导入导出
-- 🎯 自动激活启用代理
-- 🎨 现代化UI界面
+    // 检查是否已有私钥文件
+    let packCommand
+    if (fs.existsSync(pemPath)) {
+      // 如果有私钥文件，使用它
+      packCommand = `"${chromePath}" --pack-extension="${extensionDir}" --pack-extension-key="${pemPath}"`
+    } else {
+      // 如果没有私钥文件，不指定key参数，Chrome会自动生成
+      packCommand = `"${chromePath}" --pack-extension="${extensionDir}"`
+    }
 
-## 使用说明
+    try {
+      execSync(packCommand, { stdio: 'inherit' })
 
-1. 点击扩展图标打开管理界面
-2. 创建代理分组和规则
-3. 配置源地址和目标地址
-4. 启用需要的代理规则
-5. 使用导入导出功能备份配置
+      // Chrome会在扩展目录的父目录中生成文件，需要移动到正确位置
+      const parentDir = resolve(extensionDir, '..')
+      const generatedCrx = resolve(parentDir, 'dist-crx.crx')
+      const generatedPem = resolve(parentDir, 'dist-crx.pem')
+      const targetCrx = resolve(extensionDir, 'Raby.crx')
+      const targetPem = resolve(extensionDir, 'Raby.pem')
 
-## 注意事项
+      // 移动文件到正确位置
+      if (fs.existsSync(generatedCrx)) {
+        fs.renameSync(generatedCrx, targetCrx)
+      }
+      if (fs.existsSync(generatedPem)) {
+        fs.renameSync(generatedPem, targetPem)
+      }
 
-- 首次安装可能需要重启浏览器
-- 确保在开发者模式下安装
-- 如遇权限问题，请检查扩展权限设置
-- 建议定期备份配置
-
-## 更新扩展
-
-如需更新扩展：
-1. 重新运行构建脚本：\`npm run build:extension\`
-2. 在Chrome扩展管理页面点击"重新加载"
-3. 或者卸载后重新安装新版本
-
-## 技术支持
-
-如有问题，请查看项目文档或提交Issue。
-`
-
-  const installPath = resolve(__dirname, '../dist-extension/INSTALL.md')
-  fs.writeFileSync(installPath, instructions)
-  console.log('📝 安装说明已生成: dist-extension/INSTALL.md')
+      console.log('✅ .crx文件生成完成！')
+      console.log('📦 CRX文件: dist-crx/Raby.crx')
+      console.log('🔑 密钥文件: dist-crx/Raby.pem')
+    } catch (error) {
+      console.log('⚠️ 自动生成.crx文件失败，请手动生成')
+      console.log('📝 手动生成步骤：')
+      console.log('1. 打开Chrome浏览器')
+      console.log('2. 访问 chrome://extensions/')
+      console.log('3. 开启"开发者模式"')
+      console.log('4. 点击"打包扩展程序"')
+      console.log('5. 选择扩展程序根目录：dist-crx/')
+      console.log('6. 点击"打包扩展程序"按钮')
+      console.log('7. 将生成的.crx文件重命名为Raby.crx')
+    }
+  } catch (error) {
+    console.log('⚠️ 生成.crx文件时出错:', error.message)
+  }
 }
 
 // 运行构建
