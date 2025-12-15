@@ -79,7 +79,7 @@ async function buildExtension() {
     generateCrxFile(crxDir).then(() => {
       console.log('✅ 扩展构建完成！')
       console.log('📁 输出目录: dist-crx/')
-      console.log('📦 扩展文件: dist-crx/Raby.crx')
+      console.log('📦 扩展文件: dist-crx/RabyBlue.crx')
     })
   } catch (error) {
     console.error('❌ 构建失败:', error)
@@ -130,8 +130,8 @@ async function generateCrxFile(extensionDir) {
       return
     }
 
-    const crxPath = resolve(extensionDir, 'Raby.crx')
-    const pemPath = resolve(extensionDir, 'Raby.pem')
+    const crxPath = resolve(extensionDir, 'RabyBlue.crx')
+    const pemPath = resolve(extensionDir, 'RabyBlue.pem')
 
     // 检查是否已有私钥文件
     let packCommand
@@ -150,8 +150,8 @@ async function generateCrxFile(extensionDir) {
       const parentDir = resolve(extensionDir, '..')
       const generatedCrx = resolve(parentDir, 'dist-crx.crx')
       const generatedPem = resolve(parentDir, 'dist-crx.pem')
-      const targetCrx = resolve(extensionDir, 'Raby.crx')
-      const targetPem = resolve(extensionDir, 'Raby.pem')
+      const targetCrx = resolve(extensionDir, 'RabyBlue.crx')
+      const targetPem = resolve(extensionDir, 'RabyBlue.pem')
 
       // 移动文件到正确位置
       if (fs.existsSync(generatedCrx)) {
@@ -162,8 +162,8 @@ async function generateCrxFile(extensionDir) {
       }
 
       console.log('✅ .crx文件生成完成！')
-      console.log('📦 CRX文件: dist-crx/Raby.crx')
-      console.log('🔑 密钥文件: dist-crx/Raby.pem')
+      console.log('📦 CRX文件: dist-crx/RabyBlue.crx')
+      console.log('🔑 密钥文件: dist-crx/RabyBlue.pem')
     } catch (error) {
       console.log('⚠️ 自动生成.crx文件失败，请手动生成')
       console.log('📝 手动生成步骤：')

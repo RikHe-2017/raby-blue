@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Raby",
+  "name": "RabyBlue",
   "version": "1.0.0",
   "description": "A browser extension to redirect requests to different URLs",
   "permissions": [

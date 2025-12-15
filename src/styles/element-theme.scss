@@ -1,0 +1,8 @@
+/* Element Plus 主题定制 */
+@forward 'element-plus/theme-chalk/src/common/var.scss' with (
+  $colors: (
+    'primary': (
+      'base': #667eea
+    )
+  )
+);

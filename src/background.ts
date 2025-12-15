@@ -113,7 +113,7 @@ const buildDeclarativeRules = (rules: any[]): chrome.declarativeNetRequest.Rule[
 }
 
 // 扩展启动日志
-console.log('🚀 Raby Extension Started')
+console.log('🚀 RabyBlue Extension Started')
 console.log('📋 Extension ID:', chrome.runtime.id)
 console.log('📅 Start Time:', new Date().toISOString())
 

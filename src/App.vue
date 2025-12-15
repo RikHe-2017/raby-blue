@@ -1,32 +1,38 @@
 <script lang="ts" setup>
-  import { onMounted, ref, watch, computed } from 'vue'
-  import {
-    ElButton,
-    ElSwitch,
-    ElInput,
-    ElEmpty,
-    ElTree,
-    ElIcon,
-    ElDropdown,
-    ElDropdownMenu,
-    ElDropdownItem
-  } from 'element-plus'
-  import { Plus, Delete, Search, Setting } from '@element-plus/icons-vue'
-  import type { FilterNodeMethodFunction, TreeInstance } from 'element-plus'
+  import { onMounted, onUnmounted, ref, watch, computed, nextTick } from 'vue'
+  import { ElMessage } from 'element-plus'
+  import Sidebar from './components/Sidebar.vue'
+  import ContentHeader from './components/ContentHeader.vue'
+  import ConfigSection from './components/ConfigSection.vue'
   import { useProxyStore } from './stores/proxy'
   import type { ProxyGroup, ProxyRule } from './types/proxy'
-  import { ElMessage } from 'element-plus'
+
+  interface TreeNode {
+    id: string
+    label: string
+    type: 'group' | 'rule'
+    enabled?: boolean
+    sourceUrl?: string
+    targetUrl?: string
+    groupId?: string
+    children?: TreeNode[]
+  }
 
   const proxyStore = useProxyStore()
   const proxyEnabled = ref(false)
   const activeGroupId = ref<string>('')
   const activeItemId = ref<string>('')
   const jsonConfig = ref('')
-  const filterText = ref('')
-  const treeRef = ref<TreeInstance>()
   const activeItemName = ref('')
+  const isNameSaved = ref(false)
+  const isConfigSaved = ref(false)
+  let nameSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let configSaveTimer: ReturnType<typeof setTimeout> | null = null
+  const expandedKeys = ref<string[]>([])
+  let uiStateSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   const groups = computed(() => proxyStore.groups)
+
   // 递归查找分组
   const findGroupById = (groups: ProxyGroup[], id: string): ProxyGroup | null => {
     for (const group of groups) {
@@ -58,40 +64,6 @@
     return group.rules.find(rule => rule.id === activeItemId.value)
   })
 
-  // 递归构建树形数据结构
-  const buildTreeData = (groups: ProxyGroup[]): any[] => {
-    return groups.map(group => ({
-      id: group.id,
-      label: group.name,
-      type: 'group',
-      enabled: group.enabled,
-      children: [
-        // 子分组
-        ...(group.children ? buildTreeData(group.children) : []),
-        // 代理规则
-        ...group.rules.map(rule => ({
-          id: rule.id,
-          label: rule.name,
-          type: 'rule',
-          enabled: rule.enabled,
-          sourceUrl: rule.sourceUrl,
-          targetUrl: rule.targetUrl,
-          groupId: group.id
-        }))
-      ]
-    }))
-  }
-
-  // 树形数据结构
-  const treeData = computed(() => {
-    return buildTreeData(groups.value)
-  })
-
-  const treeProps = {
-    children: 'children',
-    label: 'label'
-  }
-
   // 递归查找第一个被启用的代理规则
   const findFirstEnabledRule = (
     groups: ProxyGroup[]
@@ -112,10 +84,8 @@
     return null
   }
 
-  onMounted(async () => {
-    await proxyStore.loadConfig()
-    proxyEnabled.value = proxyStore.enabled
-
+  // 设置默认选中项
+  const setDefaultActiveItem = () => {
     // 查找第一个被启用的代理规则
     const firstEnabledRule = findFirstEnabledRule(groups.value)
 
@@ -128,17 +98,129 @@
       activeGroupId.value = groups.value[0].id
       activeItemId.value = groups.value[0].id
     }
-  })
-
-  // 监听搜索文本变化
-  watch(filterText, val => {
-    treeRef.value?.filter(val)
-  })
+  }
 
   // 默认JSON配置示例
   const defaultJsonConfig = {
     proxy: ['*.example.com/static/jquery.js', 'localhost/static/jquery.js']
   }
+
+  onMounted(async () => {
+    await proxyStore.loadConfig()
+    await proxyStore.loadUIState()
+    proxyEnabled.value = proxyStore.enabled
+
+    // 确保 expandedKeys 是数组格式
+    await nextTick()
+    const savedExpandedKeys = Array.isArray(proxyStore.uiState.expandedKeys)
+      ? [...proxyStore.uiState.expandedKeys]
+      : []
+
+    // 恢复UI状态
+    if (savedExpandedKeys.length > 0) {
+      // 过滤掉不存在的节点ID（可能被删除了）
+      const validExpandedKeys: string[] = []
+      const collectAllGroupIds = (groups: ProxyGroup[]): string[] => {
+        const ids: string[] = []
+        groups.forEach(group => {
+          ids.push(group.id)
+          if (group.children) {
+            ids.push(...collectAllGroupIds(group.children))
+          }
+        })
+        return ids
+      }
+      const allGroupIds = collectAllGroupIds(groups.value)
+      savedExpandedKeys.forEach(id => {
+        if (allGroupIds.includes(id)) {
+          validExpandedKeys.push(id)
+        }
+      })
+      await nextTick()
+      expandedKeys.value = validExpandedKeys.length > 0 ? validExpandedKeys : allGroupIds
+    } else {
+      // 如果没有保存的状态，默认展开所有节点
+      const allGroupIds: string[] = []
+      const collectGroupIds = (groups: ProxyGroup[]) => {
+        groups.forEach(group => {
+          allGroupIds.push(group.id)
+          if (group.children) {
+            collectGroupIds(group.children)
+          }
+        })
+      }
+      collectGroupIds(groups.value)
+      await nextTick()
+      expandedKeys.value = allGroupIds
+    }
+
+    // 恢复选中状态
+    if (proxyStore.uiState.activeGroupId && proxyStore.uiState.activeItemId) {
+      // 验证保存的ID是否仍然存在
+      const savedGroup = findGroupById(groups.value, proxyStore.uiState.activeGroupId)
+      if (savedGroup) {
+        // 检查是选中分组还是规则
+        if (proxyStore.uiState.activeItemId === proxyStore.uiState.activeGroupId) {
+          // 选中分组
+          activeGroupId.value = proxyStore.uiState.activeGroupId
+          activeItemId.value = proxyStore.uiState.activeGroupId
+        } else {
+          // 检查规则是否存在
+          const rule = savedGroup.rules.find(r => r.id === proxyStore.uiState.activeItemId)
+          if (rule) {
+            activeGroupId.value = proxyStore.uiState.activeGroupId
+            activeItemId.value = proxyStore.uiState.activeItemId
+          } else {
+            // 规则不存在，使用默认逻辑
+            setDefaultActiveItem()
+          }
+        }
+      } else {
+        // 分组不存在，使用默认逻辑
+        setDefaultActiveItem()
+      }
+    } else {
+      // 没有保存的状态，使用默认逻辑
+      setDefaultActiveItem()
+    }
+
+    // 初始化完成，允许 watch 触发保存
+    isInitializing = false
+  })
+
+  // 监听选中状态变化，保存UI状态
+  let isInitializing = true
+  watch([activeGroupId, activeItemId], () => {
+    // 初始化完成后才保存
+    if (!isInitializing) {
+      saveUIState()
+    }
+  })
+
+  onUnmounted(() => {
+    // 清理定时器
+    if (nameSaveTimer) {
+      clearTimeout(nameSaveTimer)
+    }
+    if (configSaveTimer) {
+      clearTimeout(configSaveTimer)
+    }
+    if (uiStateSaveTimer) {
+      clearTimeout(uiStateSaveTimer)
+    }
+    // 组件卸载前保存一次UI状态
+    proxyStore.uiState.expandedKeys = [...expandedKeys.value]
+    proxyStore.uiState.activeGroupId = activeGroupId.value
+    proxyStore.uiState.activeItemId = activeItemId.value
+    proxyStore.saveUIState()
+  })
+
+  watch(
+    () => proxyStore.enabled,
+    newValue => {
+      proxyEnabled.value = newValue
+    }
+  )
 
   // 监听活动项目变化
   watch(
@@ -148,6 +230,8 @@
         // 当前选中的是分组
         activeItemName.value = group.name
         jsonConfig.value = ''
+        isNameSaved.value = true
+        isConfigSaved.value = true
       } else if (rule) {
         // 当前选中的是代理规则
         activeItemName.value = rule.name
@@ -160,47 +244,91 @@
         } else {
           jsonConfig.value = JSON.stringify(defaultJsonConfig, null, 2)
         }
+        isNameSaved.value = true
+        isConfigSaved.value = true
       } else {
         activeItemName.value = ''
         jsonConfig.value = JSON.stringify(defaultJsonConfig, null, 2)
+        isNameSaved.value = false
+        isConfigSaved.value = false
       }
     },
     { immediate: true }
   )
 
+  // 监听展开状态变化，保存UI状态
   watch(
-    () => proxyStore.enabled,
-    newValue => {
-      proxyEnabled.value = newValue
-    }
+    expandedKeys,
+    () => {
+      // 初始化完成后才保存
+      if (!isInitializing) {
+        saveUIState()
+      }
+    },
+    { deep: true }
   )
 
-  // 节点过滤方法
-  const filterNode: FilterNodeMethodFunction = (value: string, data: any) => {
-    if (!value) return true
-    return data.label.toLowerCase().includes(value.toLowerCase())
+  // 保存UI状态（防抖）
+  const saveUIState = () => {
+    // 清除之前的定时器
+    if (uiStateSaveTimer) {
+      clearTimeout(uiStateSaveTimer)
+    }
+
+    // 防抖保存，300ms后保存
+    uiStateSaveTimer = setTimeout(() => {
+      proxyStore.uiState.expandedKeys = [...expandedKeys.value]
+      proxyStore.uiState.activeGroupId = activeGroupId.value
+      proxyStore.uiState.activeItemId = activeItemId.value
+      proxyStore.saveUIState()
+    }, 300)
   }
 
   const handleGlobalProxyToggle = () => {
     proxyStore.toggleGlobalProxy()
   }
 
-  const handleNodeClick = (data: any) => {
+  const handleNodeClick = (data: TreeNode) => {
     if (data.type === 'group') {
       // 点击分组，设置为活动分组和活动项目
       activeGroupId.value = data.id
       activeItemId.value = data.id
     } else if (data.type === 'rule') {
       // 点击代理规则，设置其所属分组为活动分组，规则为活动项目
-      activeGroupId.value = data.groupId
+      activeGroupId.value = data.groupId!
       activeItemId.value = data.id
+    }
+    // 保存UI状态
+    saveUIState()
+  }
+
+  // 处理节点展开
+  const handleNodeExpand = (data: TreeNode) => {
+    if (!expandedKeys.value.includes(data.id)) {
+      expandedKeys.value.push(data.id)
+    }
+    // 初始化完成后才保存
+    if (!isInitializing) {
+      saveUIState()
     }
   }
 
-  const handleCheckboxChange = (data: any) => {
+  // 处理节点折叠
+  const handleNodeCollapse = (data: TreeNode) => {
+    const index = expandedKeys.value.indexOf(data.id)
+    if (index > -1) {
+      expandedKeys.value.splice(index, 1)
+    }
+    // 初始化完成后才保存
+    if (!isInitializing) {
+      saveUIState()
+    }
+  }
+
+  const handleCheckboxChange = (data: TreeNode) => {
     // 现在只有代理规则会有复选框
     if (data.type === 'rule') {
-      proxyStore.updateRule(data.groupId, data.id, { enabled: data.enabled })
+      proxyStore.updateRule(data.groupId!, data.id, { enabled: data.enabled })
 
       // 如果当前没有选中的代理规则，自动激活第一个被启用的代理
       if (!activeItemId.value || activeItemId.value === activeGroupId.value) {
@@ -210,32 +338,6 @@
           activeItemId.value = firstEnabledRule.ruleId
         }
       }
-    }
-  }
-
-  const handleDropdownCommand = (command: string) => {
-    if (command === 'category') {
-      handleAddGroup()
-    } else if (command === 'proxy') {
-      handleAddProxy()
-    }
-  }
-
-  const handleNodeDropdownCommand = (command: string, parentData: any) => {
-    if (command === 'category') {
-      handleAddSubGroup(parentData)
-    } else if (command === 'proxy') {
-      handleAddProxyToGroup(parentData)
-    }
-  }
-
-  const handleRuleDropdownCommand = (command: string, ruleData: any) => {
-    if (command === 'duplicate') {
-      handleDuplicateRule(ruleData)
-    } else if (command === 'edit') {
-      handleEditRule(ruleData)
-    } else if (command === 'delete') {
-      handleDeleteRule(ruleData)
     }
   }
 
@@ -252,14 +354,14 @@
     }
   }
 
-  const handleAddSubGroup = (parentData: any) => {
+  const handleAddSubGroup = (parentId: string) => {
     const newGroup: ProxyGroup = {
       id: crypto.randomUUID(),
       name: '新分类',
       enabled: false,
       rules: []
     }
-    proxyStore.addGroup(newGroup, parentData.id)
+    proxyStore.addGroup(newGroup, parentId)
     // 设置新创建的分组为活动分组
     activeGroupId.value = newGroup.id
     activeItemId.value = newGroup.id
@@ -271,42 +373,42 @@
       handleAddGroup()
       return
     }
-    handleAddProxyToGroup({ id: activeGroupId.value })
+    handleAddProxyToGroup(activeGroupId.value)
   }
 
-  const handleAddProxyToGroup = (parentData: any) => {
+  const handleAddProxyToGroup = (groupId: string) => {
     const newRule: ProxyRule = {
       id: crypto.randomUUID(),
       name: '新代理',
       sourceUrl: '',
       targetUrl: '',
       enabled: false,
-      groupId: parentData.id
+      groupId
     }
-    proxyStore.addRule(parentData.id, newRule)
+    proxyStore.addRule(groupId, newRule)
   }
 
-  const handleDuplicateRule = (ruleData: any) => {
+  const handleDuplicateRule = (ruleData: TreeNode) => {
     const duplicatedRule: ProxyRule = {
       id: crypto.randomUUID(),
       name: `${ruleData.label} - 副本`,
-      sourceUrl: ruleData.sourceUrl,
-      targetUrl: ruleData.targetUrl,
+      sourceUrl: ruleData.sourceUrl || '',
+      targetUrl: ruleData.targetUrl || '',
       enabled: false,
-      groupId: ruleData.groupId
+      groupId: ruleData.groupId!
     }
-    proxyStore.addRule(ruleData.groupId, duplicatedRule)
+    proxyStore.addRule(ruleData.groupId!, duplicatedRule)
   }
 
-  const handleEditRule = (ruleData: any) => {
+  const handleEditRule = (ruleData: TreeNode) => {
     // 设置当前规则为活动项目，进入编辑模式
-    activeGroupId.value = ruleData.groupId
+    activeGroupId.value = ruleData.groupId!
     activeItemId.value = ruleData.id
   }
 
-  const handleDeleteRule = (ruleData: any) => {
+  const handleDeleteRule = (ruleData: TreeNode) => {
     // 删除代理规则
-    proxyStore.deleteRule(ruleData.groupId, ruleData.id)
+    proxyStore.deleteRule(ruleData.groupId!, ruleData.id)
 
     // 如果删除的是当前选中的规则，清空选中状态
     if (activeItemId.value === ruleData.id) {
@@ -318,22 +420,41 @@
     ElMessage.success('代理规则已删除')
   }
 
-  const handleSaveItemName = () => {
-    if (isActiveGroup.value && activeGroupId.value && activeItemName.value.trim()) {
-      proxyStore.updateGroup(activeGroupId.value, { name: activeItemName.value.trim() })
-    } else if (activeRule.value && activeItemName.value.trim()) {
-      proxyStore.updateRule(activeGroupId.value, activeRule.value.id, {
-        name: activeItemName.value.trim()
-      })
-    }
-  }
-
   const handleDeleteGroup = (groupId: string) => {
     proxyStore.deleteGroup(groupId)
     if (activeGroupId.value === groupId) {
       activeGroupId.value = groups.value.length > 0 ? groups.value[0].id : ''
     }
   }
+
+  const handleSaveItemName = async () => {
+    if (isActiveGroup.value && activeGroupId.value && activeItemName.value.trim()) {
+      proxyStore.updateGroup(activeGroupId.value, { name: activeItemName.value.trim() })
+      isNameSaved.value = true
+    } else if (activeRule.value && activeItemName.value.trim()) {
+      proxyStore.updateRule(activeGroupId.value, activeRule.value.id, {
+        name: activeItemName.value.trim()
+      })
+      isNameSaved.value = true
+    }
+  }
+
+  // 监听名称变化，实时保存
+  watch(activeItemName, () => {
+    if (!activeGroupId.value) return
+
+    isNameSaved.value = false
+
+    // 清除之前的定时器
+    if (nameSaveTimer) {
+      clearTimeout(nameSaveTimer)
+    }
+
+    // 防抖保存，500ms后保存
+    nameSaveTimer = setTimeout(() => {
+      handleSaveItemName()
+    }, 500)
+  })
 
   // 导出配置功能
   const handleExportConfig = () => {
@@ -398,15 +519,6 @@
     input.click()
   }
 
-  // 处理导出导入命令
-  const handleExportImportCommand = (command: string) => {
-    if (command === 'export') {
-      handleExportConfig()
-    } else if (command === 'import') {
-      handleImportConfig()
-    }
-  }
-
   const handleJsonInput = (value: string) => {
     try {
       const config = JSON.parse(value)
@@ -441,8 +553,7 @@
             targetUrl: targetUrl.trim()
           })
 
-          // 显示成功消息
-          ElMessage.success('配置保存成功')
+          isConfigSaved.value = true
         } else {
           throw new Error('代理规则格式错误：应为 ["源地址", "目标地址"] 格式')
         }
@@ -451,9 +562,26 @@
       }
     } catch (e) {
       console.error('保存配置失败:', e)
-      ElMessage.error(`保存失败: ${e instanceof Error ? e.message : '未知错误'}`)
+      isConfigSaved.value = false
     }
   }
+
+  // 监听JSON配置变化，实时保存
+  watch(jsonConfig, () => {
+    if (!activeRule.value) return
+
+    isConfigSaved.value = false
+
+    // 清除之前的定时器
+    if (configSaveTimer) {
+      clearTimeout(configSaveTimer)
+    }
+
+    // 防抖保存，800ms后保存（JSON解析需要更多时间）
+    configSaveTimer = setTimeout(() => {
+      saveJsonConfig()
+    }, 800)
+  })
 
   const formatJson = () => {
     try {
@@ -468,495 +596,68 @@
 <template>
   <div class="app-container">
     <!-- 左侧分组列表 -->
-    <div class="sidebar">
-      <div class="sidebar-header">
-        <h3>代理分组</h3>
-        <div class="header-actions">
-          <el-dropdown @command="handleDropdownCommand">
-            <el-icon class="add-icon">
-              <Plus />
-            </el-icon>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="category"> 创建分类 </el-dropdown-item>
-                <el-dropdown-item command="proxy"> 创建代理 </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-dropdown @command="handleExportImportCommand">
-            <el-icon class="export-import-icon">
-              <Setting />
-            </el-icon>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="export"> 导出配置 </el-dropdown-item>
-                <el-dropdown-item command="import"> 导入配置 </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-      </div>
-
-      <!-- 搜索框 -->
-      <div class="search-container">
-        <el-input
-          v-model="filterText"
-          placeholder="搜索分类或代理..."
-          class="search-input"
-          clearable
-        >
-          <template #prefix>
-            <el-icon><Search /></el-icon>
-          </template>
-        </el-input>
-      </div>
-
-      <el-scrollbar class="tree-container">
-        <el-tree
-          ref="treeRef"
-          :data="treeData"
-          :props="treeProps"
-          node-key="id"
-          :default-expand-all="true"
-          :expand-on-click-node="false"
-          highlight-current
-          :filter-node-method="filterNode"
-        >
-          <template #default="{ node, data }">
-            <div
-              class="tree-node"
-              :class="{
-                active:
-                  (data.type === 'group' &&
-                    data.id === activeGroupId &&
-                    data.id === activeItemId) ||
-                  (data.type === 'rule' && data.id === activeItemId)
-              }"
-              @click.stop="handleNodeClick(data)"
-            >
-              <div class="node-content">
-                <!-- 只在代理规则显示复选框 -->
-                <el-checkbox
-                  v-if="data.type === 'rule'"
-                  v-model="data.enabled"
-                  @change="handleCheckboxChange(data)"
-                  @click.stop
-                  style="margin-right: 4px"
-                />
-                <span class="node-label">{{ node.label }}</span>
-              </div>
-              <div class="node-actions">
-                <!-- 分组节点的操作 -->
-                <template v-if="data.type === 'group'">
-                  <el-dropdown @command="command => handleNodeDropdownCommand(command, data)">
-                    <el-icon class="action-icon add-icon">
-                      <Plus />
-                    </el-icon>
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item command="category"> 创建分类 </el-dropdown-item>
-                        <el-dropdown-item command="proxy"> 创建代理 </el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
-                  <el-icon class="action-icon delete-icon" @click.stop="handleDeleteGroup(data.id)">
-                    <Delete />
-                  </el-icon>
-                </template>
-
-                <!-- 叶子节点（代理规则）的操作 -->
-                <template v-else-if="data.type === 'rule'">
-                  <el-dropdown @command="command => handleRuleDropdownCommand(command, data)">
-                    <el-icon class="action-icon add-icon">
-                      <Plus />
-                    </el-icon>
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item command="duplicate"> 复制代理 </el-dropdown-item>
-                        <el-dropdown-item command="edit"> 编辑代理 </el-dropdown-item>
-                        <el-dropdown-item command="delete" divided> 删除代理 </el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
-                </template>
-              </div>
-            </div>
-          </template>
-        </el-tree>
-      </el-scrollbar>
-    </div>
+    <Sidebar
+      :groups="groups"
+      :expanded-keys="expandedKeys"
+      :active-item-id="activeItemId"
+      @node-click="handleNodeClick"
+      @node-expand="handleNodeExpand"
+      @node-collapse="handleNodeCollapse"
+      @checkbox-change="handleCheckboxChange"
+      @add-group="handleAddGroup"
+      @add-proxy="handleAddProxy"
+      @export-config="handleExportConfig"
+      @import-config="handleImportConfig"
+      @duplicate-rule="handleDuplicateRule"
+      @edit-rule="handleEditRule"
+      @delete-rule="handleDeleteRule"
+      @delete-group="handleDeleteGroup"
+    />
 
     <!-- 右侧内容区域 -->
     <div class="content">
-      <div class="content-header">
-        <div class="header-left">
-          <span class="title">浏览器请求代理</span>
-          <el-switch
-            v-model="proxyEnabled"
-            active-text="启用"
-            inactive-text="禁用"
-            @change="handleGlobalProxyToggle"
-          />
-        </div>
-      </div>
+      <ContentHeader :proxy-enabled="proxyEnabled" @toggle-proxy="handleGlobalProxyToggle" />
 
       <div class="content-body">
-        <div v-if="activeGroupId" class="config-section">
-          <!-- 名称编辑区域 -->
-          <div class="name-edit-section">
-            <h4>{{ isActiveGroup ? '分组名称' : '代理名称' }}</h4>
-            <el-input
-              v-model="activeItemName"
-              :placeholder="isActiveGroup ? '请输入分组名称' : '请输入代理名称'"
-              @blur="handleSaveItemName"
-              @keyup.enter="handleSaveItemName"
-            />
-          </div>
-
-          <!-- 代理配置区域 -->
-          <div v-if="!isActiveGroup && activeRule" class="proxy-config-section">
-            <!-- JSON 编辑器区域 -->
-            <div class="json-editor-section">
-              <div class="editor-header">
-                <h4>JSON 配置文件</h4>
-                <div class="editor-actions">
-                  <el-button type="primary" size="small" @click="saveJsonConfig">
-                    保存配置
-                  </el-button>
-                  <el-button size="small" @click="formatJson"> 格式化 </el-button>
-                </div>
-              </div>
-
-              <div class="json-editor-container">
-                <el-input
-                  v-model="jsonConfig"
-                  type="textarea"
-                  :rows="20"
-                  placeholder="请输入JSON配置..."
-                  class="json-editor"
-                  @input="handleJsonInput"
-                />
-              </div>
-
-              <div class="config-example">
-                <h5>配置说明：</h5>
-                <p class="example-text">
-                  在 proxy 数组中配置代理规则，格式为 "源地址 -> 目标地址"。 支持通配符匹配，如
-                  "*.example.com/*" 匹配所有 example.com 域名下的资源。
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-else class="empty-state">
-          <el-empty description="请选择一个分组或代理来配置" />
-        </div>
+        <ConfigSection
+          :active-group-id="activeGroupId"
+          :is-active-group="isActiveGroup"
+          :active-rule="activeRule"
+          :active-item-name="activeItemName"
+          :json-config="jsonConfig"
+          :is-name-saved="isNameSaved"
+          :is-config-saved="isConfigSaved"
+          @update:active-item-name="val => (activeItemName = val)"
+          @update:json-config="val => (jsonConfig = val)"
+          @json-input="handleJsonInput"
+          @format-json="formatJson"
+        />
       </div>
     </div>
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
   .app-container {
     display: flex;
     width: 800px;
     height: 600px;
-    background-color: $color-2;
-  }
-
-  .sidebar {
-    width: 280px;
-    background-color: $color-1;
-    border-right: 1px solid $color-4;
-    display: flex;
-    flex-direction: column;
-
-    .sidebar-header {
-      padding: $space-mini;
-      border-bottom: 1px solid $color-4;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-
-      h3 {
-        margin: 0;
-        font-size: $font-size-medium;
-        color: $color-12;
-      }
-
-      .header-actions {
-        display: flex;
-        gap: $space-mini;
-        align-items: center;
-
-        .add-icon,
-        .export-import-icon {
-          font-size: 18px;
-          color: $color-8;
-          cursor: pointer;
-          transition: color 0.2s;
-
-          &:hover {
-            color: $color-10;
-          }
-        }
-      }
-    }
-
-    .search-container {
-      padding: $space-mini;
-      border-bottom: 1px solid $color-4;
-
-      .search-input {
-        width: 100%;
-      }
-    }
-
-    .tree-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: $space-small;
-
-      .tree-node {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        width: 100%;
-        padding: 0 $space-small;
-
-        .node-content {
-          display: flex;
-          align-items: center;
-          flex: 1;
-
-          .node-label {
-            font-size: $font-size-default;
-            color: $color-12;
-          }
-        }
-
-        .node-actions {
-          display: flex;
-          gap: $space-mini;
-
-          .action-icon {
-            font-size: 14px;
-            color: $color-8;
-            cursor: pointer;
-            transition: color 0.2s;
-            opacity: 0;
-
-            &:hover {
-              color: $color-10;
-            }
-
-            &.add-icon:hover {
-              color: #409eff;
-            }
-
-            &.delete-icon:hover {
-              color: #f56c6c;
-            }
-          }
-        }
-
-        &:hover {
-          .action-icon {
-            opacity: 1;
-          }
-        }
-      }
-    }
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    border-radius: var(--el-border-radius-base);
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   }
 
   .content {
     flex: 1;
     display: flex;
     flex-direction: column;
-
-    .content-header {
-      background-color: $color-1;
-      border-bottom: 1px solid $color-4;
-      padding: $space-mini;
-
-      .header-left {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: $space-mini;
-
-        .title {
-          font-size: $font-size-large;
-          font-weight: bold;
-          color: $color-12;
-        }
-      }
-    }
+    background: var(--el-bg-color-page);
 
     .content-body {
       flex: 1;
-      padding: $space-mini;
+      padding: var(--el-component-size-small);
       overflow-y: auto;
-
-      .config-section {
-        .name-edit-section {
-          margin-bottom: $space-mini;
-          padding-bottom: $space-mini;
-          border-bottom: 1px solid $color-4;
-
-          h4 {
-            margin: 0 0 $space-small 0;
-            font-size: $font-size-medium;
-            color: $color-12;
-          }
-        }
-
-        .proxy-config-section {
-          .config-header {
-            margin-bottom: $space-mini;
-
-            h4 {
-              margin: 0;
-              font-size: $font-size-medium;
-              color: $color-12;
-            }
-          }
-
-          .config-form {
-            margin-bottom: $space-mini;
-            padding-bottom: $space-mini;
-            border-bottom: 1px solid $color-4;
-
-            .form-item {
-              display: flex;
-              align-items: center;
-              margin-bottom: $space-small;
-
-              label {
-                width: 80px;
-                font-size: $font-size-default;
-                color: $color-12;
-                margin-right: $space-small;
-              }
-
-              .el-input {
-                flex: 1;
-              }
-
-              .el-switch {
-                margin-left: $space-small;
-              }
-            }
-          }
-        }
-
-        .json-editor-section {
-          .editor-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: $space-mini;
-
-            h4 {
-              margin: 0;
-              font-size: $font-size-medium;
-              color: $color-12;
-            }
-
-            .editor-actions {
-              display: flex;
-              gap: $space-small;
-            }
-          }
-
-          .json-editor-container {
-            margin-bottom: $space-mini;
-
-            .json-editor {
-              font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-              font-size: $font-size-small;
-              line-height: 1.5;
-            }
-          }
-
-          .config-example {
-            background-color: $color-1;
-            border: 1px solid $color-4;
-            border-radius: $radius-small;
-            padding: $space-mini;
-
-            h5 {
-              margin: 0 0 $space-small 0;
-              font-size: $font-size-default;
-              color: $color-12;
-            }
-
-            .example-text {
-              margin: 0;
-              font-size: $font-size-small;
-              color: $color-10;
-              line-height: 1.5;
-            }
-          }
-        }
-      }
-
-      .empty-state {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100%;
-      }
-    }
-  }
-
-  // 自定义树形组件样式
-  :deep(.el-tree) {
-    background: transparent;
-
-    .el-tree-node__content {
-      height: auto;
-      padding: $space-mini 0;
-
-      &:hover {
-        background-color: $color-3;
-      }
-    }
-
-    .el-tree-node.is-current > .el-tree-node__content {
-      background-color: $theme-primary-light !important;
-      border-left: 3px solid $theme-primary;
-      padding-left: $space-small;
-    }
-
-    .el-tree-node__expand-icon {
-      color: $color-8;
-    }
-
-    .el-tree-node__label {
-      font-size: $font-size-default;
-      color: $color-12;
-    }
-  }
-
-  // 当前激活节点的特殊样式
-  .tree-node.active {
-    background-color: $theme-primary;
-    border-radius: $radius-small;
-
-    .node-label {
-      font-weight: 500;
-      color: #fff !important;
-    }
-
-    .action-icon {
-      opacity: 1;
-      color: $theme-primary;
-
-      &:hover {
-        color: $theme-primary-hover;
-      }
     }
   }
 </style>
