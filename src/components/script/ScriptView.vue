@@ -1,6 +1,5 @@
 <script lang="ts" setup>
   import { onMounted, onUnmounted, ref, watch, computed, nextTick } from 'vue'
-  import { ElMessage } from 'element-plus'
   import ScriptSidebar from './ScriptSidebar.vue'
   import ScriptSection from './ScriptSection.vue'
   import { useScriptStore } from '../../stores/script'

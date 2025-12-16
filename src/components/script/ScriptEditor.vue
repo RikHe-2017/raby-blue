@@ -1,6 +1,5 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
-  import { ElMessage } from 'element-plus'
   import MonacoEditor from '../common/MonacoEditor.vue'
 
   interface Props {

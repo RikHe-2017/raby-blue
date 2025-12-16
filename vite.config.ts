@@ -2,12 +2,16 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
+import { createRequire } from 'module'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import Icons from 'unplugin-icons/vite'
 import IconsResolver from 'unplugin-icons/resolver'
-import monacoEditorPlugin from 'vite-plugin-monaco-editor'
+
+const require = createRequire(import.meta.url)
+const monacoEditorPluginModule = require('vite-plugin-monaco-editor')
+const monacoEditorPlugin = monacoEditorPluginModule.default || monacoEditorPluginModule
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)

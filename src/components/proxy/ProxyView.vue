@@ -1,6 +1,5 @@
 <script lang="ts" setup>
   import { onMounted, onUnmounted, ref, watch, computed, nextTick } from 'vue'
-  import { ElMessage } from 'element-plus'
   import Sidebar from './Sidebar.vue'
   import ContentHeader from './ContentHeader.vue'
   import ConfigSection from './ConfigSection.vue'
