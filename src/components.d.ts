@@ -34,6 +34,7 @@ declare module 'vue' {
     IEpSetting: typeof import('~icons/ep/setting')['default']
     IEpVideoPlay: typeof import('~icons/ep/video-play')['default']
     JsonEditor: typeof import('./components/proxy/JsonEditor.vue')['default']
+    MonacoEditor: typeof import('./components/common/MonacoEditor.vue')['default']
     NameEditor: typeof import('./components/proxy/NameEditor.vue')['default']
     ProxyTree: typeof import('./components/proxy/ProxyTree.vue')['default']
     ProxyView: typeof import('./components/proxy/ProxyView.vue')['default']

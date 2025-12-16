@@ -1,7 +1,7 @@
 <script lang="ts" setup>
   import NameEditor from './NameEditor.vue'
   import JsonEditor from './JsonEditor.vue'
-  import type { ProxyRule } from '../types/proxy'
+  import type { ProxyRule } from '../../types/proxy'
 
   interface Props {
     activeGroupId: string
@@ -20,7 +20,7 @@
     (e: 'format-json'): void
   }
 
-  const props = defineProps<Props>()
+  defineProps<Props>()
   const emit = defineEmits<Emits>()
 </script>
 
@@ -64,10 +64,6 @@
     justify-content: center;
     align-items: center;
     height: 100%;
-  }
-
-  .config-section__proxy {
-    // empty
   }
 
   .config-section__empty-content {

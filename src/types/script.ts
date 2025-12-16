@@ -24,4 +24,3 @@ export const DEFAULT_SCRIPT_CONFIG: ScriptConfig = {
   enabled: false,
   groups: []
 }
-

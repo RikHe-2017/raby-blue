@@ -1,5 +1,7 @@
 <script lang="ts" setup>
-  import { ref, watch } from 'vue'
+  import { ref } from 'vue'
+  import { ElMessage } from 'element-plus'
+  import MonacoEditor from '../common/MonacoEditor.vue'
 
   interface Props {
     modelValue: string
@@ -12,25 +14,19 @@
     (e: 'format'): void
   }
 
-  const props = defineProps<Props>()
+  defineProps<Props>()
   const emit = defineEmits<Emits>()
 
-  const jsonValue = ref(props.modelValue)
-
-  watch(
-    () => props.modelValue,
-    newValue => {
-      jsonValue.value = newValue
-    }
-  )
-
-  watch(jsonValue, newValue => {
-    emit('update:modelValue', newValue)
-    emit('input', newValue)
-  })
+  const monacoEditorRef = ref<InstanceType<typeof MonacoEditor>>()
 
   const handleFormat = () => {
-    emit('format')
+    try {
+      monacoEditorRef.value?.format()
+      ElMessage.success('格式化成功')
+    } catch (error) {
+      console.error('格式化失败:', error)
+      ElMessage.error('格式化失败，请检查JSON语法')
+    }
   }
 </script>
 
@@ -56,18 +52,12 @@
 
     <div class="json-editor__body">
       <div class="json-editor__container">
-        <el-input
-          :model-value="jsonValue"
-          type="textarea"
-          :rows="18"
-          placeholder="请输入JSON配置..."
-          class="json-editor__input"
-          @update:model-value="
-            val => {
-              jsonValue = val
-              emit('update:modelValue', val)
-            }
-          "
+        <MonacoEditor
+          ref="monacoEditorRef"
+          :model-value="modelValue"
+          language="json"
+          height="400px"
+          @update:model-value="val => emit('update:modelValue', val)"
           @input="val => emit('input', val)"
         />
       </div>

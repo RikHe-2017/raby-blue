@@ -1,8 +1,7 @@
 <script lang="ts" setup>
-  import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+  import { ref } from 'vue'
   import { ElMessage } from 'element-plus'
-  import * as monaco from 'monaco-editor'
-  import type { editor } from 'monaco-editor'
+  import MonacoEditor from '../common/MonacoEditor.vue'
 
   interface Props {
     modelValue: string
@@ -16,80 +15,18 @@
     (e: 'execute'): void
   }
 
-  const props = defineProps<Props>()
+  defineProps<Props>()
   const emit = defineEmits<Emits>()
 
-  const editorContainer = ref<HTMLDivElement>()
-  let editorInstance: editor.IStandaloneCodeEditor | null = null
-
-  onMounted(async () => {
-    await nextTick()
-    if (editorContainer.value) {
-      // 创建Monaco Editor实例
-      editorInstance = monaco.editor.create(editorContainer.value, {
-        value: props.modelValue || '// 请输入你的JS代码',
-        language: 'javascript',
-        theme: 'vs',
-        automaticLayout: true,
-        minimap: { enabled: false },
-        fontSize: 14,
-        lineNumbers: 'on',
-        roundedSelection: false,
-        scrollBeyondLastLine: false,
-        wordWrap: 'on',
-        formatOnPaste: true,
-        formatOnType: false,
-        tabSize: 2,
-        insertSpaces: true,
-        folding: true,
-        foldingStrategy: 'indentation',
-        showFoldingControls: 'always',
-        renderWhitespace: 'selection',
-        renderLineHighlight: 'all',
-        selectOnLineNumbers: true,
-        matchBrackets: 'always',
-        autoIndent: 'full',
-        suggestOnTriggerCharacters: true,
-        quickSuggestions: true,
-        acceptSuggestionOnEnter: 'on',
-        snippetSuggestions: 'top'
-      })
-
-      // 监听内容变化
-      editorInstance.onDidChangeModelContent(() => {
-        const value = editorInstance?.getValue() || ''
-        emit('update:modelValue', value)
-        emit('input', value)
-      })
-
-      // 监听外部值变化
-      watch(
-        () => props.modelValue,
-        newValue => {
-          if (editorInstance && editorInstance.getValue() !== newValue) {
-            editorInstance.setValue(newValue || '// 请输入你的JS代码')
-          }
-        }
-      )
-    }
-  })
-
-  onBeforeUnmount(() => {
-    if (editorInstance) {
-      editorInstance.dispose()
-      editorInstance = null
-    }
-  })
+  const monacoEditorRef = ref<InstanceType<typeof MonacoEditor>>()
 
   const handleFormat = () => {
-    if (editorInstance) {
-      try {
-        editorInstance.getAction('editor.action.formatDocument')?.run()
-        ElMessage.success('格式化成功')
-      } catch (error) {
-        console.error('格式化失败:', error)
-        ElMessage.error('格式化失败，请检查代码语法')
-      }
+    try {
+      monacoEditorRef.value?.format()
+      ElMessage.success('格式化成功')
+    } catch (error) {
+      console.error('格式化失败:', error)
+      ElMessage.error('格式化失败，请检查代码语法')
     }
   }
 
@@ -124,7 +61,14 @@
 
     <div class="script-editor__body">
       <div class="script-editor__container">
-        <div ref="editorContainer" class="script-editor__monaco" />
+        <MonacoEditor
+          ref="monacoEditorRef"
+          :model-value="modelValue"
+          language="javascript"
+          height="400px"
+          @update:model-value="val => emit('update:modelValue', val)"
+          @input="val => emit('input', val)"
+        />
       </div>
 
       <div class="script-editor__tip">
@@ -193,6 +137,7 @@
 
   .script-editor__actions {
     display: flex;
+    gap: var(--el-component-size-small);
   }
 
   .script-editor__body {
@@ -201,14 +146,6 @@
 
   .script-editor__container {
     margin-bottom: 12px;
-    border: 1px solid var(--el-border-color);
-    border-radius: var(--el-border-radius-base);
-    overflow: hidden;
-  }
-
-  .script-editor__monaco {
-    height: 400px;
-    width: 100%;
   }
 
   .script-editor__tip {
