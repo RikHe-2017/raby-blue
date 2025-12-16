@@ -35,33 +35,33 @@
 </script>
 
 <template>
-  <div class="config-card json-editor-section">
-    <div class="card-header">
-      <div class="card-title-wrapper">
-        <el-icon class="card-icon"><Document /></el-icon>
-        <div class="title-content">
+  <div class="json-editor">
+    <div class="json-editor__header">
+      <div class="json-editor__title-wrapper">
+        <el-icon class="json-editor__icon"><i-ep-document /></el-icon>
+        <div class="json-editor__title-content">
           <h4>JSON 配置文件</h4>
-          <el-icon v-if="isSaved" class="saved-icon">
-            <Check />
+          <el-icon v-if="isSaved" class="json-editor__saved-icon">
+            <i-ep-check />
           </el-icon>
         </div>
       </div>
-      <div class="card-actions">
+      <div class="json-editor__actions">
         <el-button type="primary" size="small" @click="handleFormat">
-          <el-icon><Setting /></el-icon>
+          <el-icon><i-ep-setting /></el-icon>
           格式化
         </el-button>
       </div>
     </div>
 
-    <div class="card-body">
-      <div class="json-editor-container">
+    <div class="json-editor__body">
+      <div class="json-editor__container">
         <el-input
           :model-value="jsonValue"
           type="textarea"
           :rows="18"
           placeholder="请输入JSON配置..."
-          class="json-editor"
+          class="json-editor__input"
           @update:model-value="
             val => {
               jsonValue = val
@@ -72,11 +72,11 @@
         />
       </div>
 
-      <div class="config-tip">
-        <el-icon class="tip-icon"><InfoFilled /></el-icon>
-        <div class="tip-content">
-          <p class="tip-title">配置说明</p>
-          <p class="tip-text">
+      <div class="json-editor__tip">
+        <el-icon class="json-editor__tip-icon"><i-ep-info-filled /></el-icon>
+        <div class="json-editor__tip-content">
+          <p class="json-editor__tip-title">配置说明</p>
+          <p class="json-editor__tip-text">
             在 proxy 数组中配置代理规则，格式为 "源地址 -> 目标地址"。支持通配符匹配，如
             "*.example.com/*" 匹配所有 example.com 域名下的资源。
           </p>
@@ -87,7 +87,7 @@
 </template>
 
 <style lang="scss" scoped>
-  .config-card {
+  .json-editor {
     background: var(--el-bg-color);
     border-radius: var(--el-border-radius-base);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -98,84 +98,84 @@
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
       transform: translateY(-2px);
     }
+  }
 
-    .card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: var(--el-component-size-small) var(--el-component-size);
-      background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
-      border-bottom: 1px solid var(--el-border-color);
+  .json-editor__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px;
+    background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
+    border-bottom: 1px solid var(--el-border-color);
+  }
 
-      .card-title-wrapper {
-        display: flex;
-        align-items: flex-start;
-        gap: var(--el-component-size-small);
+  .json-editor__title-wrapper {
+    display: flex;
+    align-items: center;
+    flex: 1;
+  }
 
-        .card-icon {
-          color: var(--el-color-primary);
-          margin-top: 2px;
-        }
+  .json-editor__icon {
+    color: var(--el-color-primary);
+    margin-right: 12px;
+  }
 
-        .title-content {
-          display: flex;
-          flex-direction: column;
-          gap: var(--el-border-radius-small);
+  .json-editor__title-content {
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    justify-content: space-between;
 
-          h4 {
-            margin: 0;
-          }
-
-          .saved-icon {
-            color: #67c23a;
-            animation: fadeIn 0.3s;
-          }
-        }
-      }
-
-      .card-actions {
-        display: flex;
-        gap: var(--el-component-size-small);
-      }
-    }
-
-    .card-body {
-      padding: var(--el-component-size);
+    h4 {
+      margin: 0;
     }
   }
 
-  .json-editor-section {
-    .json-editor-container {
-      margin-bottom: var(--el-component-size);
-    }
+  .json-editor__saved-icon {
+    color: #67c23a;
+    animation: fadeIn 0.3s;
+  }
 
-    .config-tip {
-      display: flex;
-      gap: var(--el-component-size-small);
-      padding: var(--el-component-size);
-      background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
-      border-radius: var(--el-border-radius-base);
-      border-left: 4px solid var(--el-color-primary);
+  .json-editor__actions {
+    display: flex;
+    gap: var(--el-component-size-small);
+  }
 
-      .tip-icon {
-        color: var(--el-color-primary);
-      }
+  .json-editor__body {
+    padding: 8px;
+  }
 
-      .tip-content {
-        flex: 1;
+  .json-editor__container {
+    margin-bottom: 12px;
+  }
 
-        .tip-title {
-          margin: 0 0 4px 0;
-          font-weight: 600;
-        }
+  .json-editor__tip {
+    display: flex;
+    gap: 12px;
+    padding: 8px;
+    background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+    border-radius: var(--el-border-radius-base);
+    border-left: 4px solid var(--el-color-primary);
+  }
 
-        .tip-text {
-          margin: 0;
-          font-size: 12px;
-          color: var(--el-text-color-regular);
-        }
-      }
-    }
+  .json-editor__tip-icon {
+    color: var(--el-color-primary);
+  }
+
+  .json-editor__tip-content {
+    flex: 1;
+  }
+
+  .json-editor__tip-title {
+    margin: 0 0 4px 0;
+    font-weight: 600;
+  }
+
+  .json-editor__tip-text {
+    margin: 0;
+    font-size: 12px;
+    color: var(--el-text-color-regular);
   }
 
   @keyframes fadeIn {

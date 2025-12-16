@@ -30,25 +30,25 @@
 </script>
 
 <template>
-  <div class="config-card name-edit-section">
-    <div class="card-header">
-      <div class="card-title-wrapper">
-        <el-icon class="card-icon"><Setting /></el-icon>
-        <div class="title-content">
+  <div class="name-editor">
+    <div class="name-editor__header">
+      <div class="name-editor__title-wrapper">
+        <el-icon class="name-editor__icon"><i-ep-setting /></el-icon>
+        <div class="name-editor__title-content">
           <h4>{{ isActiveGroup ? '分组名称' : '代理名称' }}</h4>
-          <el-icon v-if="isSaved" class="saved-icon">
-            <Check />
+          <el-icon v-if="isSaved" class="name-editor__saved-icon">
+            <i-ep-check />
           </el-icon>
         </div>
       </div>
     </div>
-    <div class="card-body">
+    <div class="name-editor__body">
       <el-input
         :model-value="name"
         :placeholder="isActiveGroup ? '请输入分组名称' : '请输入代理名称'"
         size="large"
         @update:model-value="
-          val => {
+          (val: string) => {
             name = val
             emit('update:modelValue', val)
           }
@@ -59,7 +59,7 @@
 </template>
 
 <style lang="scss" scoped>
-  .config-card {
+  .name-editor {
     background: var(--el-bg-color);
     border-radius: var(--el-border-radius-base);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -70,45 +70,48 @@
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
       transform: translateY(-2px);
     }
+  }
 
-    .card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: var(--el-component-size-small) var(--el-component-size);
-      background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
-      border-bottom: 1px solid var(--el-border-color);
+  .name-editor__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px;
+    background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
+    border-bottom: 1px solid var(--el-border-color);
+  }
 
-      .card-title-wrapper {
-        display: flex;
-        align-items: flex-start;
-        gap: var(--el-component-size-small);
+  .name-editor__title-wrapper {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: var(--el-component-size-small);
+  }
 
-        .card-icon {
-          color: var(--el-color-primary);
-          margin-top: 2px;
-        }
+  .name-editor__icon {
+    color: var(--el-color-primary);
+    margin-top: 2px;
+  }
 
-        .title-content {
-          display: flex;
-          flex-direction: column;
-          gap: var(--el-border-radius-small);
+  .name-editor__title-content {
+    display: flex;
+    justify-content: space-between;
+    flex: 1;
+    align-items: center;
+    gap: var(--el-border-radius-small);
 
-          h4 {
-            margin: 0;
-          }
-
-          .saved-icon {
-            color: #67c23a;
-            animation: fadeIn 0.3s;
-          }
-        }
-      }
+    h4 {
+      margin: 0;
     }
+  }
 
-    .card-body {
-      padding: var(--el-component-size);
-    }
+  .name-editor__saved-icon {
+    color: #67c23a;
+    animation: fadeIn 0.3s;
+  }
+
+  .name-editor__body {
+    padding: 8px;
   }
 
   @keyframes fadeIn {

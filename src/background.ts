@@ -139,42 +139,38 @@ chrome.storage.onChanged.addListener(changes => {
 
 // Update declarative net request rules
 async function updateDeclarativeRules() {
-  try {
-    // Remove existing rules
-    const existingRules = await chrome.declarativeNetRequest.getDynamicRules()
-    const ruleIds = existingRules.map(rule => rule.id)
+  // Remove existing rules
+  const existingRules = await chrome.declarativeNetRequest.getDynamicRules()
+  const ruleIds = existingRules.map(rule => rule.id)
 
-    if (ruleIds.length > 0) {
-      await chrome.declarativeNetRequest.updateDynamicRules({
-        removeRuleIds: ruleIds
-      })
-    }
-
-    if (!proxyConfig.enabled) {
-      console.log('Global proxy is disabled, no rules added')
-      return
-    }
-
-    // Get all enabled rules
-    const enabledRules = getAllEnabledRules(proxyConfig.groups)
-
-    if (enabledRules.length === 0) {
-      console.log('No enabled rules found')
-      return
-    }
-
-    // Build declarative rules using XSwitch-like logic
-    const rules = buildDeclarativeRules(enabledRules)
-
-    // Add new rules
+  if (ruleIds.length > 0) {
     await chrome.declarativeNetRequest.updateDynamicRules({
-      addRules: rules
+      removeRuleIds: ruleIds
     })
-
-    console.log('Updated declarative rules:', rules)
-  } catch (error) {
-    console.error('Error updating declarative rules:', error)
   }
+
+  if (!proxyConfig.enabled) {
+    console.log('Global proxy is disabled, no rules added')
+    return
+  }
+
+  // Get all enabled rules
+  const enabledRules = getAllEnabledRules(proxyConfig.groups)
+
+  if (enabledRules.length === 0) {
+    console.log('No enabled rules found')
+    return
+  }
+
+  // Build declarative rules using XSwitch-like logic
+  const rules = buildDeclarativeRules(enabledRules)
+
+  // Add new rules
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    addRules: rules
+  })
+
+  console.log('Updated declarative rules:', rules)
 }
 
 // Get all enabled rules from groups recursively

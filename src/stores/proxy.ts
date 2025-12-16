@@ -105,21 +105,13 @@ export const useProxyStore = defineStore('proxy', () => {
   }
 
   const saveConfig = async () => {
-    try {
-      await storage.set('proxyConfig', config.value)
-    } catch (error) {
-      console.error('Failed to save proxy configuration:', error)
-    }
+    await storage.set('proxyConfig', config.value)
   }
 
   const loadConfig = async () => {
-    try {
-      const result = await storage.get('proxyConfig')
-      if (result) {
-        config.value = result
-      }
-    } catch (error) {
-      console.error('Failed to load proxy configuration:', error)
+    const result = await storage.get('proxyConfig')
+    if (result) {
+      config.value = result
     }
   }
 
@@ -135,41 +127,33 @@ export const useProxyStore = defineStore('proxy', () => {
   })
 
   const saveUIState = async () => {
-    try {
-      // 确保 expandedKeys 是数组格式
-      const stateToSave = {
-        ...uiState.value,
-        expandedKeys: Array.isArray(uiState.value.expandedKeys) ? uiState.value.expandedKeys : []
-      }
-      await storage.set('proxyUIState', stateToSave)
-    } catch (error) {
-      console.error('Failed to save UI state:', error)
+    // 确保 expandedKeys 是数组格式
+    const stateToSave = {
+      ...uiState.value,
+      expandedKeys: Array.isArray(uiState.value.expandedKeys) ? uiState.value.expandedKeys : []
     }
+    await storage.set('proxyUIState', stateToSave)
   }
 
   const loadUIState = async () => {
-    try {
-      const result = await storage.get('proxyUIState')
-      if (result) {
-        // 确保 expandedKeys 是数组格式（Chrome storage 可能将数组转换为对象）
-        if (result.expandedKeys) {
-          if (Array.isArray(result.expandedKeys)) {
-            uiState.value = result
-          } else if (typeof result.expandedKeys === 'object') {
-            // 如果是对象，转换为数组
-            uiState.value = {
-              ...result,
-              expandedKeys: Object.values(result.expandedKeys)
-            }
-          } else {
-            uiState.value = result
+    const result = await storage.get('proxyUIState')
+    if (result) {
+      // 确保 expandedKeys 是数组格式（Chrome storage 可能将数组转换为对象）
+      if (result.expandedKeys) {
+        if (Array.isArray(result.expandedKeys)) {
+          uiState.value = result
+        } else if (typeof result.expandedKeys === 'object') {
+          // 如果是对象，转换为数组
+          uiState.value = {
+            ...result,
+            expandedKeys: Object.values(result.expandedKeys)
           }
         } else {
           uiState.value = result
         }
+      } else {
+        uiState.value = result
       }
-    } catch (error) {
-      console.error('Failed to load UI state:', error)
     }
   }
 

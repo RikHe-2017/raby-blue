@@ -35,7 +35,7 @@
     />
 
     <!-- 代理配置区域 -->
-    <div v-if="!isActiveGroup && activeRule" class="proxy-config-section">
+    <div v-if="!isActiveGroup && activeRule" class="config-section__proxy">
       <JsonEditor
         :model-value="jsonConfig"
         :is-saved="isConfigSaved"
@@ -45,10 +45,10 @@
       />
     </div>
   </div>
-  <div v-else class="empty-state">
-    <div class="empty-content">
-      <el-icon class="empty-icon"><Document /></el-icon>
-      <p class="empty-text">请选择一个分组或代理来配置</p>
+  <div v-else class="config-section config-section--empty">
+    <div class="config-section__empty-content">
+      <el-icon class="config-section__empty-icon"><i-ep-document /></el-icon>
+      <p class="config-section__empty-text">请选择一个分组或代理来配置</p>
     </div>
   </div>
 </template>
@@ -57,29 +57,32 @@
   .config-section {
     display: flex;
     flex-direction: column;
-    gap: var(--el-component-size);
+    gap: 12px;
   }
 
-  .empty-state {
-    display: flex;
+  .config-section--empty {
     justify-content: center;
     align-items: center;
     height: 100%;
+  }
 
-    .empty-content {
-      text-align: center;
-      padding: calc(var(--el-component-size) * 2);
+  .config-section__proxy {
+    // empty
+  }
 
-      .empty-icon {
-        font-size: 64px;
-        color: var(--el-text-color-disabled);
-        margin-bottom: var(--el-component-size);
-        opacity: 0.5;
-      }
+  .config-section__empty-content {
+    text-align: center;
+    padding: calc(var(--el-component-size) * 2);
+  }
 
-      .empty-text {
-        color: var(--el-text-color-secondary);
-      }
-    }
+  .config-section__empty-icon {
+    font-size: 64px;
+    color: var(--el-text-color-disabled);
+    margin-bottom: var(--el-component-size);
+    opacity: 0.5;
+  }
+
+  .config-section__empty-text {
+    color: var(--el-text-color-secondary);
   }
 </style>

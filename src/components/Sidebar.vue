@@ -35,7 +35,7 @@
     (e: 'delete-group', groupId: string): void
   }
 
-  const props = defineProps<Props>()
+  defineProps<Props>()
   const emit = defineEmits<Emits>()
 
   const filterText = ref('')
@@ -72,12 +72,12 @@
     emit('checkbox-change', data)
   }
 
-  const handleAddGroup = (parentId?: string) => {
+  const handleAddGroup = (_parentId?: string) => {
     // ProxyTree 传递的 parentId 暂时不使用，App.vue 会根据当前选中状态处理
     emit('add-group')
   }
 
-  const handleAddProxy = (parentId: string) => {
+  const handleAddProxy = (_parentId: string) => {
     // ProxyTree 传递的 parentId 暂时不使用，App.vue 会根据当前选中状态处理
     emit('add-proxy')
   }
@@ -101,12 +101,12 @@
 
 <template>
   <div class="sidebar">
-    <div class="sidebar-header">
-      <h3>代理分组</h3>
-      <div class="header-actions">
+    <div class="sidebar__header">
+      <div class="sidebar__header-title">代理分组</div>
+      <div class="sidebar__header-actions">
         <el-dropdown @command="handleDropdownCommand">
-          <el-icon class="add-icon">
-            <Plus />
+          <el-icon class="sidebar__header-icon sidebar__header-icon--add">
+            <i-ep-plus />
           </el-icon>
           <template #dropdown>
             <el-dropdown-menu>
@@ -116,8 +116,8 @@
           </template>
         </el-dropdown>
         <el-dropdown @command="handleExportImportCommand">
-          <el-icon class="export-import-icon">
-            <Setting />
+          <el-icon class="sidebar__header-icon sidebar__header-icon--export-import">
+            <i-ep-setting />
           </el-icon>
           <template #dropdown>
             <el-dropdown-menu>
@@ -130,15 +130,20 @@
     </div>
 
     <!-- 搜索框 -->
-    <div class="search-container">
-      <el-input v-model="filterText" placeholder="搜索分类或代理..." class="search-input" clearable>
+    <div class="sidebar__search">
+      <el-input
+        v-model="filterText"
+        placeholder="搜索分类或代理..."
+        class="sidebar__search-input"
+        clearable
+      >
         <template #prefix>
-          <el-icon><Search /></el-icon>
+          <el-icon><i-ep-search /></el-icon>
         </template>
       </el-input>
     </div>
 
-    <el-scrollbar class="tree-container">
+    <el-scrollbar class="sidebar__tree">
       <ProxyTree
         :groups="groups"
         :filter-text="filterText"
@@ -167,56 +172,51 @@
     display: flex;
     flex-direction: column;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
+  }
 
-    .sidebar-header {
-      padding: var(--el-component-size) var(--el-component-size-small);
-      border-bottom: 1px solid var(--el-border-color);
+  .sidebar__header {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--el-border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    .sidebar__header-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+  }
+
+  .sidebar__header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .sidebar__header-icon {
+    cursor: pointer;
+    transition: all 0.3s;
+    border-radius: var(--el-border-radius-small);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.1);
+    }
+  }
+
+  .sidebar__search {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--el-border-color);
+  }
+
+  .sidebar__tree {
+    flex: 1;
+    overflow: hidden;
+    padding-right: 8px;
+
+    :deep(.el-tree-node__content) {
+      width: 100%;
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-
-      h3 {
-        margin: 0;
-        color: white;
-      }
-
-      .header-actions {
-        display: flex;
-        gap: var(--el-component-size-small);
-        align-items: center;
-
-        .add-icon,
-        .export-import-icon {
-          color: rgba(255, 255, 255, 0.9);
-          cursor: pointer;
-          transition: all 0.3s;
-          padding: 4px;
-          border-radius: var(--el-border-radius-small);
-
-          &:hover {
-            color: white;
-            background: rgba(255, 255, 255, 0.2);
-            transform: scale(1.1);
-          }
-        }
-      }
-    }
-
-    .search-container {
-      padding: var(--el-component-size-small);
-      border-bottom: 1px solid var(--el-border-color);
-    }
-
-    .tree-container {
-      flex: 1;
-      overflow: hidden;
-
-      :deep(.el-tree-node__content) {
-        width: 100%;
-        display: flex;
-      }
     }
   }
 </style>

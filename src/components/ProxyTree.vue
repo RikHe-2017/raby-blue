@@ -1,7 +1,7 @@
 <script lang="ts" setup>
   import { computed, ref, watch } from 'vue'
-  import type { FilterNodeMethodFunction, TreeInstance } from 'element-plus'
-  import type { ProxyGroup, ProxyRule } from '../types/proxy'
+  import type { TreeInstance } from 'element-plus'
+  import type { ProxyGroup } from '../types/proxy'
 
   interface TreeNode {
     id: string
@@ -49,7 +49,7 @@
     return groups.map(group => ({
       id: group.id,
       label: group.name,
-      type: 'group',
+      type: 'group' as const,
       enabled: group.enabled,
       children: [
         // 子分组
@@ -58,7 +58,7 @@
         ...group.rules.map(rule => ({
           id: rule.id,
           label: rule.name,
-          type: 'rule',
+          type: 'rule' as const,
           enabled: rule.enabled,
           sourceUrl: rule.sourceUrl,
           targetUrl: rule.targetUrl,
@@ -71,7 +71,7 @@
   const treeData = computed(() => buildTreeData(props.groups))
 
   // 节点过滤方法
-  const filterNode: FilterNodeMethodFunction = (value: string, data: TreeNode) => {
+  const filterNode = (value: string, data: TreeNode) => {
     if (!value) return true
     return data.label.toLowerCase().includes(value.toLowerCase())
   }
@@ -132,7 +132,7 @@
     :current-node-key="activeItemId"
     :expand-on-click-node="false"
     highlight-current
-    :filter-node-method="filterNode"
+    :filter-node-method="filterNode as any"
     @node-expand="handleNodeExpand"
     @node-collapse="handleNodeCollapse"
   >
@@ -140,13 +140,13 @@
       <div
         class="tree-node"
         :class="{
-          active:
+          'tree-node--active':
             (data.type === 'group' && data.id === activeItemId) ||
             (data.type === 'rule' && data.id === activeItemId)
         }"
         @click.stop="handleNodeClick(data)"
       >
-        <div class="node-content">
+        <div class="tree-node__content">
           <!-- 只在代理规则显示复选框 -->
           <el-checkbox
             v-if="data.type === 'rule'"
@@ -155,14 +155,14 @@
             @click.stop
             style="margin-right: 4px"
           />
-          <span class="node-label">{{ node.label }}</span>
+          <span class="tree-node__label">{{ node.label }}</span>
         </div>
-        <div class="node-actions">
+        <div class="tree-node__actions">
           <!-- 分组节点的操作 -->
           <template v-if="data.type === 'group'">
             <el-dropdown @command="command => handleDropdownCommand(command, data)">
-              <el-icon class="action-icon add-icon">
-                <Plus />
+              <el-icon class="tree-node__action-icon tree-node__action-icon--add">
+                <i-ep-plus />
               </el-icon>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -171,16 +171,19 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-icon class="action-icon delete-icon" @click.stop="handleDeleteGroup(data.id)">
-              <Delete />
+            <el-icon
+              class="tree-node__action-icon tree-node__action-icon--delete"
+              @click.stop="handleDeleteGroup(data.id)"
+            >
+              <i-ep-delete />
             </el-icon>
           </template>
 
           <!-- 叶子节点（代理规则）的操作 -->
           <template v-else-if="data.type === 'rule'">
             <el-dropdown @command="command => handleRuleDropdownCommand(command, data)">
-              <el-icon class="action-icon add-icon">
-                <Plus />
+              <el-icon class="tree-node__action-icon tree-node__action-icon--add">
+                <i-ep-plus />
               </el-icon>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -204,36 +207,37 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
 
-    .node-content {
-      flex: 1;
-      display: flex;
-      align-items: center;
+  .tree-node__content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+  }
+
+  .tree-node__actions {
+    flex-shrink: 0;
+    display: flex;
+    gap: 4px;
+  }
+
+  .tree-node__action-icon {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    border-radius: var(--el-border-radius-small);
+    transition: all 0.2s;
+
+    &:hover {
+      background-color: var(--el-fill-color-light);
     }
+  }
 
-    .node-actions {
-      flex-shrink: 0;
+  .tree-node__action-icon--add {
+    color: var(--el-color-primary);
+  }
 
-      .action-icon {
-        display: flex;
-        align-items: center;
-        cursor: pointer;
-        padding: 4px;
-        border-radius: var(--el-border-radius-small);
-        transition: all 0.2s;
-
-        &:hover {
-          background-color: var(--el-fill-color-light);
-        }
-
-        &.add-icon {
-          color: var(--el-color-primary);
-        }
-
-        &.delete-icon {
-          color: var(--el-color-danger);
-        }
-      }
-    }
+  .tree-node__action-icon--delete {
+    color: var(--el-color-danger);
   }
 </style>

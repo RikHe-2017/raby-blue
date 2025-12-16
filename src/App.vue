@@ -1,6 +1,6 @@
 <script lang="ts" setup>
   import { onMounted, onUnmounted, ref, watch, computed, nextTick } from 'vue'
-  import { ElMessage } from 'element-plus'
+  import { ElMessage, ElConfigProvider } from 'element-plus'
   import Sidebar from './components/Sidebar.vue'
   import ContentHeader from './components/ContentHeader.vue'
   import ConfigSection from './components/ConfigSection.vue'
@@ -53,15 +53,15 @@
 
   // 判断当前选中的是否为分组
   const isActiveGroup = computed(() => {
-    return activeGroupId.value && activeItemId.value === activeGroupId.value
+    return !!(activeGroupId.value && activeItemId.value === activeGroupId.value)
   })
 
   // 当前选中的代理规则
-  const activeRule = computed(() => {
+  const activeRule = computed((): ProxyRule | null => {
     if (isActiveGroup.value) return null
     const group = activeGroup.value
     if (!group) return null
-    return group.rules.find(rule => rule.id === activeItemId.value)
+    return group.rules.find(rule => rule.id === activeItemId.value) || null
   })
 
   // 递归查找第一个被启用的代理规则
@@ -520,13 +520,9 @@
   }
 
   const handleJsonInput = (value: string) => {
-    try {
-      const config = JSON.parse(value)
-      // 这里可以添加JSON验证逻辑
-      console.log('JSON配置已更新:', config)
-    } catch (e) {
-      // JSON格式错误，忽略
-    }
+    const config = JSON.parse(value)
+    // 这里可以添加JSON验证逻辑
+    console.log('JSON配置已更新:', config)
   }
 
   const saveJsonConfig = () => {
@@ -584,61 +580,59 @@
   })
 
   const formatJson = () => {
-    try {
-      const config = JSON.parse(jsonConfig.value)
-      jsonConfig.value = JSON.stringify(config, null, 2)
-    } catch (e) {
-      console.error('JSON格式错误，无法格式化:', e)
-    }
+    const config = JSON.parse(jsonConfig.value)
+    jsonConfig.value = JSON.stringify(config, null, 2)
   }
 </script>
 
 <template>
-  <div class="app-container">
-    <!-- 左侧分组列表 -->
-    <Sidebar
-      :groups="groups"
-      :expanded-keys="expandedKeys"
-      :active-item-id="activeItemId"
-      @node-click="handleNodeClick"
-      @node-expand="handleNodeExpand"
-      @node-collapse="handleNodeCollapse"
-      @checkbox-change="handleCheckboxChange"
-      @add-group="handleAddGroup"
-      @add-proxy="handleAddProxy"
-      @export-config="handleExportConfig"
-      @import-config="handleImportConfig"
-      @duplicate-rule="handleDuplicateRule"
-      @edit-rule="handleEditRule"
-      @delete-rule="handleDeleteRule"
-      @delete-group="handleDeleteGroup"
-    />
+  <el-config-provider :size="'small'">
+    <div class="app">
+      <!-- 左侧分组列表 -->
+      <Sidebar
+        :groups="groups"
+        :expanded-keys="expandedKeys"
+        :active-item-id="activeItemId"
+        @node-click="handleNodeClick"
+        @node-expand="handleNodeExpand"
+        @node-collapse="handleNodeCollapse"
+        @checkbox-change="handleCheckboxChange"
+        @add-group="handleAddGroup"
+        @add-proxy="handleAddProxy"
+        @export-config="handleExportConfig"
+        @import-config="handleImportConfig"
+        @duplicate-rule="handleDuplicateRule"
+        @edit-rule="handleEditRule"
+        @delete-rule="handleDeleteRule"
+        @delete-group="handleDeleteGroup"
+      />
 
-    <!-- 右侧内容区域 -->
-    <div class="content">
-      <ContentHeader :proxy-enabled="proxyEnabled" @toggle-proxy="handleGlobalProxyToggle" />
+      <!-- 右侧内容区域 -->
+      <div class="app__content">
+        <ContentHeader :proxy-enabled="proxyEnabled" @toggle-proxy="handleGlobalProxyToggle" />
 
-      <div class="content-body">
-        <ConfigSection
-          :active-group-id="activeGroupId"
-          :is-active-group="isActiveGroup"
-          :active-rule="activeRule"
-          :active-item-name="activeItemName"
-          :json-config="jsonConfig"
-          :is-name-saved="isNameSaved"
-          :is-config-saved="isConfigSaved"
-          @update:active-item-name="val => (activeItemName = val)"
-          @update:json-config="val => (jsonConfig = val)"
-          @json-input="handleJsonInput"
-          @format-json="formatJson"
-        />
+        <div class="app__content-body">
+          <ConfigSection
+            :active-group-id="activeGroupId"
+            :is-active-group="isActiveGroup"
+            :active-rule="activeRule"
+            :active-item-name="activeItemName"
+            :json-config="jsonConfig"
+            :is-name-saved="isNameSaved"
+            :is-config-saved="isConfigSaved"
+            @update:active-item-name="val => (activeItemName = val)"
+            @update:json-config="val => (jsonConfig = val)"
+            @json-input="handleJsonInput"
+            @format-json="formatJson"
+          />
+        </div>
       </div>
     </div>
-  </div>
+  </el-config-provider>
 </template>
 
 <style lang="scss" scoped>
-  .app-container {
+  .app {
     display: flex;
     width: 800px;
     height: 600px;
@@ -648,16 +642,16 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   }
 
-  .content {
+  .app__content {
     flex: 1;
     display: flex;
     flex-direction: column;
     background: var(--el-bg-color-page);
+  }
 
-    .content-body {
-      flex: 1;
-      padding: var(--el-component-size-small);
-      overflow-y: auto;
-    }
+  .app__content-body {
+    flex: 1;
+    padding: 8px;
+    overflow-y: auto;
   }
 </style>
