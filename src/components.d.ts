@@ -11,8 +11,8 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    ConfigSection: typeof import('./components/ConfigSection.vue')['default']
-    ContentHeader: typeof import('./components/ContentHeader.vue')['default']
+    ConfigSection: typeof import('./components/proxy/ConfigSection.vue')['default']
+    ContentHeader: typeof import('./components/proxy/ContentHeader.vue')['default']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCheckbox: typeof import('element-plus/es')['ElCheckbox']
     ElDropdown: typeof import('element-plus/es')['ElDropdown']
@@ -22,6 +22,8 @@ declare module 'vue' {
     ElInput: typeof import('element-plus/es')['ElInput']
     ElScrollbar: typeof import('element-plus/es')['ElScrollbar']
     ElSwitch: typeof import('element-plus/es')['ElSwitch']
+    ElTabPane: typeof import('element-plus/es')['ElTabPane']
+    ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTree: typeof import('element-plus/es')['ElTree']
     IEpCheck: typeof import('~icons/ep/check')['default']
     IEpDelete: typeof import('~icons/ep/delete')['default']
@@ -30,11 +32,19 @@ declare module 'vue' {
     IEpPlus: typeof import('~icons/ep/plus')['default']
     IEpSearch: typeof import('~icons/ep/search')['default']
     IEpSetting: typeof import('~icons/ep/setting')['default']
-    JsonEditor: typeof import('./components/JsonEditor.vue')['default']
-    NameEditor: typeof import('./components/NameEditor.vue')['default']
-    ProxyTree: typeof import('./components/ProxyTree.vue')['default']
+    IEpVideoPlay: typeof import('~icons/ep/video-play')['default']
+    JsonEditor: typeof import('./components/proxy/JsonEditor.vue')['default']
+    NameEditor: typeof import('./components/proxy/NameEditor.vue')['default']
+    ProxyTree: typeof import('./components/proxy/ProxyTree.vue')['default']
+    ProxyView: typeof import('./components/proxy/ProxyView.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
-    Sidebar: typeof import('./components/Sidebar.vue')['default']
+    ScriptEditor: typeof import('./components/script/ScriptEditor.vue')['default']
+    ScriptNameEditor: typeof import('./components/script/ScriptNameEditor.vue')['default']
+    ScriptSection: typeof import('./components/script/ScriptSection.vue')['default']
+    ScriptSidebar: typeof import('./components/script/ScriptSidebar.vue')['default']
+    ScriptTree: typeof import('./components/script/ScriptTree.vue')['default']
+    ScriptView: typeof import('./components/script/ScriptView.vue')['default']
+    Sidebar: typeof import('./components/proxy/Sidebar.vue')['default']
   }
 }

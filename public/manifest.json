@@ -7,7 +7,9 @@
     "storage",
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess",
-    "declarativeNetRequestFeedback"
+    "declarativeNetRequestFeedback",
+    "scripting",
+    "tabs"
   ],
   "host_permissions": ["<all_urls>"],
   "action": {

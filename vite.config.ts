@@ -7,6 +7,7 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import Icons from 'unplugin-icons/vite'
 import IconsResolver from 'unplugin-icons/resolver'
+import monacoEditorPlugin from 'vite-plugin-monaco-editor'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -17,6 +18,7 @@ const pathSrc = resolve(__dirname, 'src')
 export default defineConfig({
   plugins: [
     vue(),
+    monacoEditorPlugin({}),
     AutoImport({
       // Auto import functions from Vue, e.g. ref, reactive, toRef...
       // 自动导入 Vue 相关函数，如：ref, reactive, toRef 等
@@ -69,5 +71,8 @@ export default defineConfig({
         assetFileNames: '[name].[ext]'
       }
     }
+  },
+  optimizeDeps: {
+    include: ['monaco-editor']
   }
 })

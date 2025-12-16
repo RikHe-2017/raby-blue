@@ -195,3 +195,40 @@ function getAllEnabledRules(groups: any[]): any[] {
 
   return rules
 }
+
+// 处理脚本执行请求
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'executeScript') {
+    // 获取当前活动标签页
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+      if (tabs[0]?.id) {
+        const tabId = tabs[0].id
+
+        // 使用chrome.scripting.executeScript执行脚本
+        chrome.scripting
+          .executeScript({
+            target: { tabId },
+            func: new Function(request.code)
+          })
+          .then(results => {
+            sendResponse({ success: true, results })
+          })
+          .catch(error => {
+            console.error('Script execution error:', error)
+            sendResponse({
+              success: false,
+              error: error.message || '脚本执行失败'
+            })
+          })
+      } else {
+        sendResponse({
+          success: false,
+          error: '未找到活动标签页'
+        })
+      }
+    })
+
+    // 返回true表示异步响应
+    return true
+  }
+})
