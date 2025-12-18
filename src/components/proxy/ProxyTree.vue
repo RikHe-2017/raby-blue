@@ -1,18 +1,7 @@
 <script lang="ts" setup>
-  import { computed, ref, watch } from 'vue'
+  import { ref, watch } from 'vue'
   import type { TreeInstance } from 'element-plus'
-  import type { ProxyGroup, ProxyRule } from '../../types/proxy'
-
-  interface TreeNode {
-    id: string
-    label: string
-    type: 'group' | 'rule'
-    enabled?: boolean
-    sourceUrl?: string
-    targetUrl?: string
-    groupId?: string
-    children?: TreeNode[]
-  }
+  import type { ProxyGroup, ProxyNode } from '../../types/proxy'
 
   interface Props {
     groups: ProxyGroup[]
@@ -22,15 +11,15 @@
   }
 
   interface Emits {
-    (e: 'node-click', data: TreeNode): void
-    (e: 'node-expand', data: TreeNode): void
-    (e: 'node-collapse', data: TreeNode): void
-    (e: 'checkbox-change', data: TreeNode): void
+    (e: 'node-click', data: ProxyNode): void
+    (e: 'node-expand', data: ProxyNode): void
+    (e: 'node-collapse', data: ProxyNode): void
+    (e: 'checkbox-change', data: ProxyNode): void
     (e: 'add-group', parentId?: string): void
     (e: 'add-proxy', parentId: string): void
-    (e: 'duplicate-rule', data: TreeNode): void
-    (e: 'edit-rule', data: TreeNode): void
-    (e: 'delete-rule', data: TreeNode): void
+    (e: 'duplicate-rule', data: ProxyNode): void
+    (e: 'edit-rule', data: ProxyNode): void
+    (e: 'delete-rule', data: ProxyNode): void
     (e: 'delete-group', groupId: string): void
   }
 
@@ -39,41 +28,19 @@
 
   const treeRef = ref<TreeInstance>()
 
+  // el-tree 配置：直接使用 name 字段作为 label，children 字段作为子节点
   const treeProps = {
     children: 'children',
-    label: 'label'
+    label: 'name' // 直接使用 ProxyGroup/ProxyRule 的 name 字段
   }
-
-  // 递归构建树形数据结构
-  const buildTreeData = (groups: ProxyGroup[]): TreeNode[] => {
-    return groups.map(group => ({
-      id: group.id,
-      label: group.name,
-      type: 'group' as const,
-      enabled: group.enabled,
-      children: [
-        // 子分组
-        ...(group.children ? buildTreeData(group.children) : []),
-        // 代理规则
-        ...group.rules.map((rule: ProxyRule) => ({
-          id: rule.id,
-          label: rule.name,
-          type: 'rule' as const,
-          enabled: rule.enabled,
-          sourceUrl: rule.sourceUrl,
-          targetUrl: rule.targetUrl,
-          groupId: group.id
-        }))
-      ]
-    }))
-  }
-
-  const treeData = computed(() => buildTreeData(props.groups))
 
   // 节点过滤方法
-  const filterNode = (value: string, data: TreeNode) => {
+  // Element Plus Tree 的 filterNodeMethod 类型: (value: FilterValue, data: TreeNodeData, child: Node) => boolean
+  // TreeNodeData 是 Record<string, any>，我们的 ProxyNode 符合这个类型
+  const filterNode = (value: string, data: Record<string, unknown>): boolean => {
     if (!value) return true
-    return data.label.toLowerCase().includes(value.toLowerCase())
+    const node = data as unknown as ProxyNode
+    return node.name.toLowerCase().includes(value.toLowerCase())
   }
 
   watch(
@@ -83,23 +50,23 @@
     }
   )
 
-  const handleNodeClick = (data: TreeNode) => {
+  const handleNodeClick = (data: ProxyNode) => {
     emit('node-click', data)
   }
 
-  const handleNodeExpand = (data: TreeNode) => {
+  const handleNodeExpand = (data: ProxyNode) => {
     emit('node-expand', data)
   }
 
-  const handleNodeCollapse = (data: TreeNode) => {
+  const handleNodeCollapse = (data: ProxyNode) => {
     emit('node-collapse', data)
   }
 
-  const handleCheckboxChange = (data: TreeNode) => {
+  const handleCheckboxChange = (data: ProxyNode) => {
     emit('checkbox-change', data)
   }
 
-  const handleDropdownCommand = (command: string, parentData: TreeNode) => {
+  const handleDropdownCommand = (command: string, parentData: ProxyNode) => {
     if (command === 'category') {
       emit('add-group', parentData.id)
     } else if (command === 'proxy') {
@@ -107,7 +74,7 @@
     }
   }
 
-  const handleRuleDropdownCommand = (command: string, ruleData: TreeNode) => {
+  const handleRuleDropdownCommand = (command: string, ruleData: ProxyNode) => {
     if (command === 'duplicate') {
       emit('duplicate-rule', ruleData)
     } else if (command === 'edit') {
@@ -125,14 +92,14 @@
 <template>
   <el-tree
     ref="treeRef"
-    :data="treeData"
+    :data="groups"
     :props="treeProps"
     node-key="id"
     :default-expanded-keys="expandedKeys"
     :current-node-key="activeItemId"
     :expand-on-click-node="false"
     highlight-current
-    :filter-node-method="filterNode as any"
+    :filter-node-method="filterNode"
     @node-expand="handleNodeExpand"
     @node-collapse="handleNodeCollapse"
   >

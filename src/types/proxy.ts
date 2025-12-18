@@ -1,3 +1,6 @@
+// 树节点类型：分组或规则
+export type ProxyNode = ProxyGroup | ProxyRule
+
 export interface ProxyRule {
   id: string
   name: string
@@ -5,15 +8,16 @@ export interface ProxyRule {
   sourceUrl: string
   targetUrl: string
   groupId: string
+  type: 'rule' // 类型标识，用于区分 group 和 rule
 }
 
 export interface ProxyGroup {
   id: string
   name: string
   enabled: boolean
-  rules: ProxyRule[]
+  type: 'group' // 类型标识，用于区分 group 和 rule
   parentId?: string // 父分组ID，如果为空则为顶级分组
-  children?: ProxyGroup[] // 子分组
+  children: ProxyNode[] // 统一的 children，包含子分组和规则
 }
 
 export interface ProxyConfig {
@@ -24,4 +28,13 @@ export interface ProxyConfig {
 export const DEFAULT_PROXY_CONFIG: ProxyConfig = {
   enabled: false,
   groups: []
+}
+
+// 类型守卫函数
+export function isProxyGroup(node: ProxyNode): node is ProxyGroup {
+  return node.type === 'group'
+}
+
+export function isProxyRule(node: ProxyNode): node is ProxyRule {
+  return node.type === 'rule'
 }

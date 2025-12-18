@@ -18,7 +18,7 @@
     <div class="app">
       <!-- 标签页切换 -->
       <div class="app__tabs">
-        <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+        <el-tabs v-model="activeTab" @tab-change="handleTabChange" lazy>
           <el-tab-pane label="代理配置" name="proxy">
             <template #label>
               <span class="app__tab-label">

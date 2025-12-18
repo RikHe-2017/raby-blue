@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ProxyConfig, ProxyGroup, ProxyRule } from '../types/proxy'
-import { DEFAULT_PROXY_CONFIG } from '../types/proxy'
+import { DEFAULT_PROXY_CONFIG, isProxyGroup, isProxyRule } from '../types/proxy'
 import { createStorageAdapter } from './storage'
 
 const storage = createStorageAdapter()
@@ -25,8 +25,10 @@ export const useProxyStore = defineStore('proxy', () => {
       if (group.id === id) {
         return group
       }
-      if (group.children) {
-        const found = findGroupById(group.children, id)
+      // 从 children 中过滤出 ProxyGroup 类型，递归查找
+      const childGroups = group.children.filter(isProxyGroup)
+      if (childGroups.length > 0) {
+        const found = findGroupById(childGroups, id)
         if (found) return found
       }
     }
@@ -38,9 +40,6 @@ export const useProxyStore = defineStore('proxy', () => {
       // 添加子分组
       const parentGroup = findGroupById(config.value.groups, parentId)
       if (parentGroup) {
-        if (!parentGroup.children) {
-          parentGroup.children = []
-        }
         group.parentId = parentId
         parentGroup.children.push(group)
       }
@@ -66,8 +65,13 @@ export const useProxyStore = defineStore('proxy', () => {
         if (group.id === groupId) {
           return false // 删除当前分组
         }
-        if (group.children) {
-          group.children = deleteGroupRecursive(group.children)
+        // 从 children 中过滤出 ProxyGroup，递归删除
+        const childGroups = group.children.filter(isProxyGroup)
+        if (childGroups.length > 0) {
+          const filteredGroups = deleteGroupRecursive(childGroups)
+          // 保留规则，只更新分组
+          const rules = group.children.filter(isProxyRule)
+          group.children = [...filteredGroups, ...rules]
         }
         return true
       })
@@ -80,7 +84,7 @@ export const useProxyStore = defineStore('proxy', () => {
   const addRule = (groupId: string, rule: ProxyRule) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
-      group.rules.push(rule)
+      group.children.push(rule)
       saveConfig()
     }
   }
@@ -88,9 +92,12 @@ export const useProxyStore = defineStore('proxy', () => {
   const updateRule = (groupId: string, ruleId: string, updatedRule: Partial<ProxyRule>) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
-      const index = group.rules.findIndex(r => r.id === ruleId)
-      if (index !== -1) {
-        group.rules[index] = { ...group.rules[index], ...updatedRule }
+      const index = group.children.findIndex(node => isProxyRule(node) && node.id === ruleId)
+      if (index !== -1 && isProxyRule(group.children[index])) {
+        group.children[index] = {
+          ...group.children[index],
+          ...updatedRule
+        } as ProxyRule
         saveConfig()
       }
     }
@@ -99,7 +106,7 @@ export const useProxyStore = defineStore('proxy', () => {
   const deleteRule = (groupId: string, ruleId: string) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
-      group.rules = group.rules.filter(r => r.id !== ruleId)
+      group.children = group.children.filter(node => !(isProxyRule(node) && node.id === ruleId))
       saveConfig()
     }
   }

@@ -4,18 +4,8 @@
   import ContentHeader from './ContentHeader.vue'
   import ConfigSection from './ConfigSection.vue'
   import { useProxyStore } from '../../stores/proxy'
-  import type { ProxyGroup, ProxyRule } from '../../types/proxy'
-
-  interface TreeNode {
-    id: string
-    label: string
-    type: 'group' | 'rule'
-    enabled?: boolean
-    sourceUrl?: string
-    targetUrl?: string
-    groupId?: string
-    children?: TreeNode[]
-  }
+  import type { ProxyGroup, ProxyRule, ProxyNode } from '../../types/proxy'
+  import { isProxyGroup, isProxyRule } from '../../types/proxy'
 
   const proxyStore = useProxyStore()
   const proxyEnabled = ref(false)
@@ -30,7 +20,7 @@
   const expandedKeys = ref<string[]>([])
   let uiStateSaveTimer: ReturnType<typeof setTimeout> | null = null
 
-  const groups = computed(() => proxyStore.groups)
+  const groups = computed(() => proxyStore.groups || [])
 
   // 递归查找分组
   const findGroupById = (groups: ProxyGroup[], id: string): ProxyGroup | null => {
@@ -38,8 +28,10 @@
       if (group.id === id) {
         return group
       }
-      if (group.children) {
-        const found = findGroupById(group.children, id)
+      // 从 children 中过滤出 ProxyGroup 类型，递归查找
+      const childGroups = group.children.filter(isProxyGroup)
+      if (childGroups.length > 0) {
+        const found = findGroupById(childGroups, id)
         if (found) return found
       }
     }
@@ -60,7 +52,8 @@
     if (isActiveGroup.value) return null
     const group = activeGroup.value
     if (!group) return null
-    return group.rules.find(rule => rule.id === activeItemId.value) || null
+    const rule = group.children.find(node => isProxyRule(node) && node.id === activeItemId.value)
+    return rule && isProxyRule(rule) ? rule : null
   })
 
   // 递归查找第一个被启用的代理规则
@@ -68,15 +61,16 @@
     groups: ProxyGroup[]
   ): { groupId: string; ruleId: string } | null => {
     for (const group of groups) {
-      // 先检查当前分组的代理规则
-      const enabledRule = group.rules.find(rule => rule.enabled)
-      if (enabledRule) {
+      // 先检查当前分组的代理规则（从 children 中过滤出规则）
+      const enabledRule = group.children.find(node => isProxyRule(node) && node.enabled)
+      if (enabledRule && isProxyRule(enabledRule)) {
         return { groupId: group.id, ruleId: enabledRule.id }
       }
 
       // 如果没有找到，递归检查子分组
-      if (group.children) {
-        const result = findFirstEnabledRule(group.children)
+      const childGroups = group.children.filter(isProxyGroup)
+      if (childGroups.length > 0) {
+        const result = findFirstEnabledRule(childGroups)
         if (result) return result
       }
     }
@@ -123,8 +117,9 @@
         const ids: string[] = []
         groups.forEach(group => {
           ids.push(group.id)
-          if (group.children) {
-            ids.push(...collectAllGroupIds(group.children))
+          const childGroups = group.children.filter(isProxyGroup)
+          if (childGroups.length > 0) {
+            ids.push(...collectAllGroupIds(childGroups))
           }
         })
         return ids
@@ -143,8 +138,9 @@
       const collectGroupIds = (groups: ProxyGroup[]) => {
         groups.forEach(group => {
           allGroupIds.push(group.id)
-          if (group.children) {
-            collectGroupIds(group.children)
+          const childGroups = group.children.filter(isProxyGroup)
+          if (childGroups.length > 0) {
+            collectGroupIds(childGroups)
           }
         })
       }
@@ -165,7 +161,9 @@
           activeItemId.value = proxyStore.uiState.activeGroupId
         } else {
           // 检查规则是否存在
-          const rule = savedGroup.rules.find(r => r.id === proxyStore.uiState.activeItemId)
+          const rule = savedGroup.children.find(
+            node => isProxyRule(node) && node.id === proxyStore.uiState.activeItemId
+          )
           if (rule) {
             activeGroupId.value = proxyStore.uiState.activeGroupId
             activeItemId.value = proxyStore.uiState.activeItemId
@@ -287,14 +285,14 @@
     proxyStore.toggleGlobalProxy()
   }
 
-  const handleNodeClick = (data: TreeNode) => {
-    if (data.type === 'group') {
+  const handleNodeClick = (data: ProxyNode) => {
+    if (isProxyGroup(data)) {
       // 点击分组，设置为活动分组和活动项目
       activeGroupId.value = data.id
       activeItemId.value = data.id
-    } else if (data.type === 'rule') {
+    } else if (isProxyRule(data)) {
       // 点击代理规则，设置其所属分组为活动分组，规则为活动项目
-      activeGroupId.value = data.groupId!
+      activeGroupId.value = data.groupId
       activeItemId.value = data.id
     }
     // 保存UI状态
@@ -302,7 +300,7 @@
   }
 
   // 处理节点展开
-  const handleNodeExpand = (data: TreeNode) => {
+  const handleNodeExpand = (data: ProxyNode) => {
     if (!expandedKeys.value.includes(data.id)) {
       expandedKeys.value.push(data.id)
     }
@@ -313,7 +311,7 @@
   }
 
   // 处理节点折叠
-  const handleNodeCollapse = (data: TreeNode) => {
+  const handleNodeCollapse = (data: ProxyNode) => {
     const index = expandedKeys.value.indexOf(data.id)
     if (index > -1) {
       expandedKeys.value.splice(index, 1)
@@ -324,10 +322,10 @@
     }
   }
 
-  const handleCheckboxChange = (data: TreeNode) => {
+  const handleCheckboxChange = (data: ProxyNode) => {
     // 现在只有代理规则会有复选框
-    if (data.type === 'rule') {
-      proxyStore.updateRule(data.groupId!, data.id, { enabled: data.enabled })
+    if (isProxyRule(data)) {
+      proxyStore.updateRule(data.groupId, data.id, { enabled: data.enabled })
 
       // 如果当前没有选中的代理规则，自动激活第一个被启用的代理
       if (!activeItemId.value || activeItemId.value === activeGroupId.value) {
@@ -345,7 +343,8 @@
       id: crypto.randomUUID(),
       name: '新分类',
       enabled: false,
-      rules: []
+      type: 'group',
+      children: []
     }
     proxyStore.addGroup(newGroup)
     if (!activeGroupId.value) {
@@ -369,32 +368,37 @@
       sourceUrl: '',
       targetUrl: '',
       enabled: false,
-      groupId
+      groupId,
+      type: 'rule'
     }
     proxyStore.addRule(groupId, newRule)
   }
 
-  const handleDuplicateRule = (ruleData: TreeNode) => {
+  const handleDuplicateRule = (ruleData: ProxyNode) => {
+    if (!isProxyRule(ruleData)) return
     const duplicatedRule: ProxyRule = {
       id: crypto.randomUUID(),
-      name: `${ruleData.label} - 副本`,
+      name: `${ruleData.name} - 副本`,
       sourceUrl: ruleData.sourceUrl || '',
       targetUrl: ruleData.targetUrl || '',
       enabled: false,
-      groupId: ruleData.groupId!
+      groupId: ruleData.groupId,
+      type: 'rule'
     }
-    proxyStore.addRule(ruleData.groupId!, duplicatedRule)
+    proxyStore.addRule(ruleData.groupId, duplicatedRule)
   }
 
-  const handleEditRule = (ruleData: TreeNode) => {
+  const handleEditRule = (ruleData: ProxyNode) => {
+    if (!isProxyRule(ruleData)) return
     // 设置当前规则为活动项目，进入编辑模式
-    activeGroupId.value = ruleData.groupId!
+    activeGroupId.value = ruleData.groupId
     activeItemId.value = ruleData.id
   }
 
-  const handleDeleteRule = (ruleData: TreeNode) => {
+  const handleDeleteRule = (ruleData: ProxyNode) => {
+    if (!isProxyRule(ruleData)) return
     // 删除代理规则
-    proxyStore.deleteRule(ruleData.groupId!, ruleData.id)
+    proxyStore.deleteRule(ruleData.groupId, ruleData.id)
 
     // 如果删除的是当前选中的规则，清空选中状态
     if (activeItemId.value === ruleData.id) {

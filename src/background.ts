@@ -1,43 +1,83 @@
-import type { ProxyConfig } from './types/proxy'
+import type { ProxyConfig, ProxyGroup, ProxyRule } from './types/proxy'
+import { isProxyGroup, isProxyRule } from './types/proxy'
 
 let proxyConfig: ProxyConfig = {
   enabled: false,
   groups: []
 }
 
-// 递归转换分组数据：将对象结构转换为数组结构
-const convertGroupToArray = (group: any): any => {
-  const convertedGroup = { ...group }
+// Chrome Storage 可能将数组存储为对象，需要转换回数组结构
+interface ChromeStorageGroup {
+  [key: string]: unknown
+  id?: string
+  name?: string
+  enabled?: boolean
+  type?: string
+  rules?: Record<string, unknown> | unknown[]
+  children?: Record<string, unknown> | unknown[]
+}
 
-  // 转换 rules
-  if (group.rules && typeof group.rules === 'object' && !Array.isArray(group.rules)) {
-    convertedGroup.rules = Object.values(group.rules)
+interface ChromeStorageConfig {
+  enabled?: boolean
+  groups?: Record<string, ChromeStorageGroup> | ProxyGroup[]
+}
+
+// 递归转换分组数据：将对象结构转换为数组结构
+const convertGroupToArray = (group: unknown): ProxyGroup => {
+  const groupObj = group as ChromeStorageGroup
+  const convertedGroup: Partial<ProxyGroup> = {
+    id: groupObj.id as string,
+    name: groupObj.name as string,
+    enabled: groupObj.enabled as boolean,
+    type: 'group' as const,
+    children: []
+  }
+
+  // 转换 rules（如果存在且是对象）
+  if (groupObj.rules && typeof groupObj.rules === 'object' && !Array.isArray(groupObj.rules)) {
+    convertedGroup.children = Object.values(groupObj.rules) as ProxyRule[]
   }
 
   // 递归转换 children
-  if (group.children && typeof group.children === 'object' && !Array.isArray(group.children)) {
-    convertedGroup.children = Object.values(group.children).map(convertGroupToArray)
+  if (
+    groupObj.children &&
+    typeof groupObj.children === 'object' &&
+    !Array.isArray(groupObj.children)
+  ) {
+    const convertedChildren = Object.values(groupObj.children).map(convertGroupToArray)
+    if (convertedGroup.children) {
+      convertedGroup.children.push(...convertedChildren)
+    } else {
+      convertedGroup.children = convertedChildren
+    }
   }
 
-  return convertedGroup
+  return convertedGroup as ProxyGroup
 }
 
 // 数据转换函数：将对象结构转换为数组结构
-const convertChromeStorageToArray = (data: any): any => {
-  if (!data) return data
-
-  // 如果是配置数据，需要转换 groups 和 rules
-  if (data.groups && typeof data.groups === 'object' && !Array.isArray(data.groups)) {
-    const convertedData = { ...data }
-    convertedData.groups = Object.values(data.groups).map(convertGroupToArray)
-    return convertedData
+const convertChromeStorageToArray = (
+  data: ChromeStorageConfig | ProxyConfig | null
+): ProxyConfig => {
+  if (!data) {
+    return { enabled: false, groups: [] }
   }
 
-  return data
+  // 如果 groups 是对象（Chrome Storage 的数组转对象问题），需要转换
+  if (data.groups && typeof data.groups === 'object' && !Array.isArray(data.groups)) {
+    const convertedGroups = Object.values(data.groups).map(convertGroupToArray)
+    return {
+      enabled: data.enabled ?? false,
+      groups: convertedGroups
+    }
+  }
+
+  // 已经是数组结构，直接返回
+  return data as ProxyConfig
 }
 
 // 构建declarativeNetRequest规则 - 借鉴XSwitch的匹配逻辑
-const buildDeclarativeRules = (rules: any[]): chrome.declarativeNetRequest.Rule[] => {
+const buildDeclarativeRules = (rules: ProxyRule[]): chrome.declarativeNetRequest.Rule[] => {
   return rules.map((rule, index) => {
     const sourceUrl = rule.sourceUrl
     const targetUrl = rule.targetUrl
@@ -45,7 +85,7 @@ const buildDeclarativeRules = (rules: any[]): chrome.declarativeNetRequest.Rule[
     // 借鉴XSwitch的匹配逻辑
     const hasRegexChars = /[\\|\[|\]|\(|\)|\*|\$|\^]/.test(sourceUrl)
 
-    let condition: any = {
+    let condition: chrome.declarativeNetRequest.RuleCondition = {
       resourceTypes: [
         'main_frame',
         'sub_frame',
@@ -174,22 +214,26 @@ async function updateDeclarativeRules() {
 }
 
 // Get all enabled rules from groups recursively
-function getAllEnabledRules(groups: any[]): any[] {
-  const rules: any[] = []
+function getAllEnabledRules(groups: ProxyGroup[]): ProxyRule[] {
+  const rules: ProxyRule[] = []
 
   for (const group of groups) {
-    // Check rules in current group
-    if (group.rules && Array.isArray(group.rules)) {
-      for (const rule of group.rules) {
-        if (rule.enabled) {
-          rules.push(rule)
+    // Check rules in current group (from children array)
+    if (group.children && Array.isArray(group.children)) {
+      for (const node of group.children) {
+        // Filter out ProxyRule type nodes that are enabled
+        if (isProxyRule(node) && node.enabled) {
+          rules.push(node)
         }
       }
     }
 
-    // Recursively check children groups
+    // Recursively check children groups (filter ProxyGroup type)
     if (group.children && group.children.length > 0) {
-      rules.push(...getAllEnabledRules(group.children))
+      const childGroups = group.children.filter(isProxyGroup)
+      if (childGroups.length > 0) {
+        rules.push(...getAllEnabledRules(childGroups))
+      }
     }
   }
 

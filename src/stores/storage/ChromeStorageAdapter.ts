@@ -1,5 +1,6 @@
 import { StorageAdapter } from './StorageAdapter'
-import type { ProxyGroup } from '../../types/proxy'
+import type { ProxyGroup, ProxyNode } from '../../types/proxy'
+import { isProxyGroup } from '../../types/proxy'
 
 /**
  * Chrome Storage 适配器
@@ -9,19 +10,34 @@ export class ChromeStorageAdapter extends StorageAdapter {
   /**
    * 递归转换分组数据：将对象结构转换为数组结构
    */
-  private convertGroupToArray(group: any): any {
-    const convertedGroup = { ...group }
-
-    // 转换 rules
-    if (group.rules && typeof group.rules === 'object' && !Array.isArray(group.rules)) {
-      convertedGroup.rules = Object.values(group.rules)
+  private convertGroupToArray(group: Record<string, unknown>): ProxyGroup {
+    // 构建 ProxyGroup 对象，确保所有必需字段都存在
+    const convertedGroup: ProxyGroup = {
+      id: group.id as string,
+      name: group.name as string,
+      enabled: group.enabled as boolean,
+      type: 'group' as const,
+      children: []
     }
 
-    // 递归转换 children
+    if (group.parentId) {
+      convertedGroup.parentId = group.parentId as string
+    }
+
+    // 转换 children（Chrome Storage 可能将数组存储为对象）
     if (group.children && typeof group.children === 'object' && !Array.isArray(group.children)) {
-      convertedGroup.children = Object.values(group.children).map((child: any) =>
-        this.convertGroupToArray(child)
-      )
+      convertedGroup.children = Object.values(group.children).map((child: unknown) => {
+        const childObj = child as Record<string, unknown>
+        // 如果是分组（有 children 字段或 type === 'group'），递归转换
+        if (childObj.type === 'group' || childObj.children !== undefined) {
+          return this.convertGroupToArray(childObj)
+        }
+        // 否则是规则，直接返回
+        return child as ProxyNode
+      })
+    } else if (Array.isArray(group.children)) {
+      // 如果已经是数组，直接使用（但需要确保类型正确）
+      convertedGroup.children = group.children as ProxyNode[]
     }
 
     return convertedGroup
@@ -46,24 +62,31 @@ export class ChromeStorageAdapter extends StorageAdapter {
   }
 
   /**
-   * 递归转换分组数据：将数组结构转换为对象结构
+   * 递归转换分组数据：将数组结构转换为对象结构（用于 Chrome Storage）
    */
-  private convertGroupToObject(group: ProxyGroup): any {
-    const convertedGroup = { ...group }
-
-    // 转换 rules
-    if (group.rules && Array.isArray(group.rules)) {
-      convertedGroup.rules = group.rules.reduce((ruleAcc: any, rule: any, ruleIndex: number) => {
-        ruleAcc[ruleIndex] = rule
-        return ruleAcc
-      }, {})
+  private convertGroupToObject(group: ProxyGroup): Record<string, unknown> {
+    const convertedGroup: Record<string, unknown> = {
+      id: group.id,
+      name: group.name,
+      enabled: group.enabled,
+      type: group.type
     }
 
-    // 递归转换 children
+    if (group.parentId) {
+      convertedGroup.parentId = group.parentId
+    }
+
+    // 转换 children（统一包含子分组和规则）
     if (group.children && Array.isArray(group.children)) {
       convertedGroup.children = group.children.reduce(
-        (childAcc: any, child: ProxyGroup, childIndex: number) => {
-          childAcc[childIndex] = this.convertGroupToObject(child)
+        (childAcc: Record<string, unknown>, child: ProxyNode, childIndex: number) => {
+          // 如果是分组，递归转换
+          if (isProxyGroup(child)) {
+            childAcc[childIndex] = this.convertGroupToObject(child)
+          } else {
+            // 如果是规则，直接添加
+            childAcc[childIndex] = child
+          }
           return childAcc
         },
         {}

@@ -1,18 +1,7 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
   import ProxyTree from './ProxyTree.vue'
-  import type { ProxyGroup } from '../../types/proxy'
-
-  interface TreeNode {
-    id: string
-    label: string
-    type: 'group' | 'rule'
-    enabled?: boolean
-    sourceUrl?: string
-    targetUrl?: string
-    groupId?: string
-    children?: TreeNode[]
-  }
+  import type { ProxyGroup, ProxyNode } from '../../types/proxy'
 
   interface Props {
     groups: ProxyGroup[]
@@ -21,17 +10,17 @@
   }
 
   interface Emits {
-    (e: 'node-click', data: TreeNode): void
-    (e: 'node-expand', data: TreeNode): void
-    (e: 'node-collapse', data: TreeNode): void
-    (e: 'checkbox-change', data: TreeNode): void
+    (e: 'node-click', data: ProxyNode): void
+    (e: 'node-expand', data: ProxyNode): void
+    (e: 'node-collapse', data: ProxyNode): void
+    (e: 'checkbox-change', data: ProxyNode): void
     (e: 'add-group'): void
     (e: 'add-proxy'): void
     (e: 'export-config'): void
     (e: 'import-config'): void
-    (e: 'duplicate-rule', data: TreeNode): void
-    (e: 'edit-rule', data: TreeNode): void
-    (e: 'delete-rule', data: TreeNode): void
+    (e: 'duplicate-rule', data: ProxyNode): void
+    (e: 'edit-rule', data: ProxyNode): void
+    (e: 'delete-rule', data: ProxyNode): void
     (e: 'delete-group', groupId: string): void
   }
 
@@ -56,19 +45,19 @@
     }
   }
 
-  const handleNodeClick = (data: TreeNode) => {
+  const handleNodeClick = (data: ProxyNode) => {
     emit('node-click', data)
   }
 
-  const handleNodeExpand = (data: TreeNode) => {
+  const handleNodeExpand = (data: ProxyNode) => {
     emit('node-expand', data)
   }
 
-  const handleNodeCollapse = (data: TreeNode) => {
+  const handleNodeCollapse = (data: ProxyNode) => {
     emit('node-collapse', data)
   }
 
-  const handleCheckboxChange = (data: TreeNode) => {
+  const handleCheckboxChange = (data: ProxyNode) => {
     emit('checkbox-change', data)
   }
 
@@ -82,15 +71,15 @@
     emit('add-proxy')
   }
 
-  const handleDuplicateRule = (data: TreeNode) => {
+  const handleDuplicateRule = (data: ProxyNode) => {
     emit('duplicate-rule', data)
   }
 
-  const handleEditRule = (data: TreeNode) => {
+  const handleEditRule = (data: ProxyNode) => {
     emit('edit-rule', data)
   }
 
-  const handleDeleteRule = (data: TreeNode) => {
+  const handleDeleteRule = (data: ProxyNode) => {
     emit('delete-rule', data)
   }
 

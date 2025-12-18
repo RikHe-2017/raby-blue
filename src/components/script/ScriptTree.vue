@@ -63,9 +63,12 @@
   const treeData = computed(() => buildTreeData(props.groups))
 
   // 节点过滤方法
-  const filterNode = (value: string, data: TreeNode) => {
+  // Element Plus Tree 的 filterNodeMethod 类型: (value: FilterValue, data: TreeNodeData, child: Node) => boolean
+  // TreeNodeData 是 Record<string, any>，我们的 TreeNode 符合这个类型
+  const filterNode = (value: string, data: Record<string, unknown>): boolean => {
     if (!value) return true
-    return data.label.toLowerCase().includes(value.toLowerCase())
+    const node = data as unknown as TreeNode
+    return node.label.toLowerCase().includes(value.toLowerCase())
   }
 
   watch(
@@ -120,7 +123,7 @@
     :current-node-key="activeItemId"
     :expand-on-click-node="false"
     highlight-current
-    :filter-node-method="filterNode as any"
+    :filter-node-method="filterNode"
     @node-expand="handleNodeExpand"
     @node-collapse="handleNodeCollapse"
   >

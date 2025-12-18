@@ -35,7 +35,38 @@
   const configureLanguageService = () => {
     if (props.language === 'javascript') {
       try {
-        const tsLang = monaco.languages.typescript as any
+        // Monaco Editor 的 typescript 语言服务类型定义可能不完整
+        // 使用类型断言访问内部 API
+        interface TypeScriptLanguageService {
+          javascriptDefaults: {
+            setCompilerOptions: (options: {
+              target?: number
+              allowNonTsExtensions?: boolean
+              moduleResolution?: number
+              module?: number
+              noEmit?: boolean
+              esModuleInterop?: boolean
+              allowJs?: boolean
+              checkJs?: boolean
+            }) => void
+            setDiagnosticsOptions: (options: {
+              noSemanticValidation?: boolean
+              noSyntaxValidation?: boolean
+            }) => void
+            addExtraLib: (content: string, filePath: string) => void
+          }
+          ScriptTarget?: {
+            ES2020?: number
+          }
+          ModuleResolutionKind?: {
+            NodeJs?: number
+          }
+          ModuleKind?: {
+            ESNext?: number
+          }
+        }
+
+        const tsLang = monaco.languages.typescript as unknown as TypeScriptLanguageService
 
         if (tsLang && tsLang.javascriptDefaults) {
           // 设置编译器选项
