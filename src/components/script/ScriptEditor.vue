@@ -136,7 +136,7 @@
 
   .script-editor__actions {
     display: flex;
-    gap: var(--el-component-size-small);
+    gap: 12px;
   }
 
   .script-editor__body {
