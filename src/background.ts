@@ -248,21 +248,24 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       if (tabs[0]?.id) {
         const tabId = tabs[0].id
 
-        // 使用chrome.scripting.executeScript执行脚本
-        // 创建一个函数，将代码字符串通过字符串模板嵌入到函数体中
-        // 注意：函数会被序列化并在目标页面中执行，所以代码必须嵌入在函数内部
-        const scriptCode = request.code.replace(/`/g, '\\`').replace(/\$/g, '\\$')
-        const executeCode = new Function(`
+        // 将代码作为参数传递，在函数内部使用 Function 构造函数
+        // 使用 world: 'MAIN' 可能有助于绕过某些 CSP 限制
+        const executeCode = function (userCode: string) {
           try {
-            return eval(\`${scriptCode}\`);
+            const func = new Function(userCode)
+            return func()
           } catch (error) {
-            throw error;
+            throw error
           }
-        `) as () => unknown
+        }
+
         chrome.scripting
           .executeScript({
             target: { tabId },
-            func: executeCode
+            func: executeCode,
+            args: [request.code],
+            injectImmediately: true,
+            world: 'MAIN' // 在页面的主世界中执行
           })
           .then(results => {
             sendResponse({ success: true, results })

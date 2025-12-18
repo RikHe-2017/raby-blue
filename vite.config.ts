@@ -74,7 +74,8 @@ export default defineConfig({
         chunkFileNames: '[name].js',
         assetFileNames: '[name].[ext]'
       }
-    }
+    },
+    sourcemap: process.env.NODE_ENV === 'development'
   },
   optimizeDeps: {
     include: ['monaco-editor']

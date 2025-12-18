@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "build:dev": "vue-tsc -b && vite build --config vite.config.dev.ts",
+    "build:dev": "vue-tsc -b && NODE_ENV=development vite build --mode development",
     "build:extension": "npm run build && node scripts/build-extension.js",
     "preview": "vite preview",
     "generate-icons": "node scripts/generate-icons.js",
