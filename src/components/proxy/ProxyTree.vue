@@ -1,7 +1,7 @@
 <script lang="ts" setup>
   import { computed, ref, watch } from 'vue'
   import type { TreeInstance } from 'element-plus'
-  import type { ProxyGroup } from '../types/proxy'
+  import type { ProxyGroup, ProxyRule } from '../../types/proxy'
 
   interface TreeNode {
     id: string
@@ -55,7 +55,7 @@
         // 子分组
         ...(group.children ? buildTreeData(group.children) : []),
         // 代理规则
-        ...group.rules.map(rule => ({
+        ...group.rules.map((rule: ProxyRule) => ({
           id: rule.id,
           label: rule.name,
           type: 'rule' as const,

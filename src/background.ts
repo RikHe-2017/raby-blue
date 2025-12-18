@@ -197,7 +197,7 @@ function getAllEnabledRules(groups: any[]): any[] {
 }
 
 // 处理脚本执行请求
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.action === 'executeScript') {
     // 获取当前活动标签页
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
@@ -208,7 +208,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.scripting
           .executeScript({
             target: { tabId },
-            func: new Function(request.code)
+            func: new Function(request.code) as (...args: any[]) => unknown
           })
           .then(results => {
             sendResponse({ success: true, results })

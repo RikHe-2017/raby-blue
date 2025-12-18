@@ -1,5 +1,5 @@
 import { StorageAdapter } from './StorageAdapter'
-import type { ProxyConfig, ProxyGroup } from '../../types/proxy'
+import type { ProxyGroup } from '../../types/proxy'
 
 /**
  * Chrome Storage 适配器

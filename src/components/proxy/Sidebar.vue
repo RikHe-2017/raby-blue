@@ -1,7 +1,7 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
   import ProxyTree from './ProxyTree.vue'
-  import type { ProxyGroup } from '../types/proxy'
+  import type { ProxyGroup } from '../../types/proxy'
 
   interface TreeNode {
     id: string

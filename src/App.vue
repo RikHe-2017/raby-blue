@@ -6,8 +6,10 @@
 
   const activeTab = ref<'proxy' | 'script'>('proxy')
 
-  const handleTabChange = (tab: 'proxy' | 'script') => {
-    activeTab.value = tab
+  const handleTabChange = (tab: string | number) => {
+    if (tab === 'proxy' || tab === 'script') {
+      activeTab.value = tab
+    }
   }
 </script>
 
