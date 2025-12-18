@@ -1,15 +1,7 @@
 <script lang="ts" setup>
-  import { computed, ref, watch } from 'vue'
+  import { ref, watch } from 'vue'
   import type { TreeInstance } from 'element-plus'
-  import type { ScriptGroup } from '../../types/script'
-
-  interface TreeNode {
-    id: string
-    label: string
-    type: 'group' | 'script'
-    groupId?: string
-    children?: TreeNode[]
-  }
+  import type { ScriptGroup, ScriptNode } from '../../types/script'
 
   interface Props {
     groups: ScriptGroup[]
@@ -19,14 +11,14 @@
   }
 
   interface Emits {
-    (e: 'node-click', data: TreeNode): void
-    (e: 'node-expand', data: TreeNode): void
-    (e: 'node-collapse', data: TreeNode): void
+    (e: 'node-click', data: ScriptNode): void
+    (e: 'node-expand', data: ScriptNode): void
+    (e: 'node-collapse', data: ScriptNode): void
     (e: 'add-group', parentId?: string): void
     (e: 'add-script', parentId: string): void
-    (e: 'duplicate-script', data: TreeNode): void
-    (e: 'edit-script', data: TreeNode): void
-    (e: 'delete-script', data: TreeNode): void
+    (e: 'duplicate-script', data: ScriptNode): void
+    (e: 'edit-script', data: ScriptNode): void
+    (e: 'delete-script', data: ScriptNode): void
     (e: 'delete-group', groupId: string): void
   }
 
@@ -35,40 +27,19 @@
 
   const treeRef = ref<TreeInstance>()
 
+  // el-tree 配置：直接使用 name 字段作为 label，children 字段作为子节点
   const treeProps = {
     children: 'children',
-    label: 'label'
+    label: 'name' // 直接使用 ScriptGroup/Script 的 name 字段
   }
-
-  // 递归构建树形数据结构
-  const buildTreeData = (groups: ScriptGroup[]): TreeNode[] => {
-    return groups.map(group => ({
-      id: group.id,
-      label: group.name,
-      type: 'group' as const,
-      children: [
-        // 子分组
-        ...(group.children ? buildTreeData(group.children) : []),
-        // 脚本文件
-        ...group.scripts.map(script => ({
-          id: script.id,
-          label: script.name,
-          type: 'script' as const,
-          groupId: group.id
-        }))
-      ]
-    }))
-  }
-
-  const treeData = computed(() => buildTreeData(props.groups))
 
   // 节点过滤方法
   // Element Plus Tree 的 filterNodeMethod 类型: (value: FilterValue, data: TreeNodeData, child: Node) => boolean
-  // TreeNodeData 是 Record<string, any>，我们的 TreeNode 符合这个类型
+  // TreeNodeData 是 Record<string, any>，我们的 ScriptNode 符合这个类型
   const filterNode = (value: string, data: Record<string, unknown>): boolean => {
     if (!value) return true
-    const node = data as unknown as TreeNode
-    return node.label.toLowerCase().includes(value.toLowerCase())
+    const node = data as unknown as ScriptNode
+    return node.name.toLowerCase().includes(value.toLowerCase())
   }
 
   watch(
@@ -78,19 +49,19 @@
     }
   )
 
-  const handleNodeClick = (data: TreeNode) => {
+  const handleNodeClick = (data: ScriptNode) => {
     emit('node-click', data)
   }
 
-  const handleNodeExpand = (data: TreeNode) => {
+  const handleNodeExpand = (data: ScriptNode) => {
     emit('node-expand', data)
   }
 
-  const handleNodeCollapse = (data: TreeNode) => {
+  const handleNodeCollapse = (data: ScriptNode) => {
     emit('node-collapse', data)
   }
 
-  const handleDropdownCommand = (command: string, parentData: TreeNode) => {
+  const handleDropdownCommand = (command: string, parentData: ScriptNode) => {
     if (command === 'category') {
       emit('add-group', parentData.id)
     } else if (command === 'script') {
@@ -98,7 +69,7 @@
     }
   }
 
-  const handleScriptDropdownCommand = (command: string, scriptData: TreeNode) => {
+  const handleScriptDropdownCommand = (command: string, scriptData: ScriptNode) => {
     if (command === 'duplicate') {
       emit('duplicate-script', scriptData)
     } else if (command === 'edit') {
@@ -116,7 +87,7 @@
 <template>
   <el-tree
     ref="treeRef"
-    :data="treeData"
+    :data="groups"
     :props="treeProps"
     node-key="id"
     :default-expanded-keys="expandedKeys"
@@ -127,7 +98,7 @@
     @node-expand="handleNodeExpand"
     @node-collapse="handleNodeCollapse"
   >
-    <template #default="{ node, data }">
+    <template #default="{ data }">
       <div
         class="tree-node"
         :class="{
@@ -138,7 +109,7 @@
         @click.stop="handleNodeClick(data)"
       >
         <div class="tree-node__content">
-          <span class="tree-node__label">{{ node.label }}</span>
+          <span class="tree-node__label">{{ data.name }}</span>
         </div>
         <div class="tree-node__actions">
           <!-- 分组节点的操作 -->

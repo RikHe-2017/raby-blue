@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ScriptConfig, ScriptGroup, Script } from '../types/script'
-import { DEFAULT_SCRIPT_CONFIG } from '../types/script'
+import { DEFAULT_SCRIPT_CONFIG, isScriptGroup, isScript } from '../types/script'
 import { createStorageAdapter } from './storage'
 
 const storage = createStorageAdapter()
@@ -25,8 +25,9 @@ export const useScriptStore = defineStore('script', () => {
       if (group.id === id) {
         return group
       }
-      if (group.children) {
-        const found = findGroupById(group.children, id)
+      const childGroups = group.children.filter(isScriptGroup)
+      if (childGroups.length > 0) {
+        const found = findGroupById(childGroups, id)
         if (found) return found
       }
     }
@@ -38,9 +39,6 @@ export const useScriptStore = defineStore('script', () => {
       // 添加子分组
       const parentGroup = findGroupById(config.value.groups, parentId)
       if (parentGroup) {
-        if (!parentGroup.children) {
-          parentGroup.children = []
-        }
         group.parentId = parentId
         parentGroup.children.push(group)
       }
@@ -66,8 +64,12 @@ export const useScriptStore = defineStore('script', () => {
         if (group.id === groupId) {
           return false // 删除当前分组
         }
-        if (group.children) {
-          group.children = deleteGroupRecursive(group.children)
+        const childGroups = group.children.filter(isScriptGroup)
+        if (childGroups.length > 0) {
+          const filteredChildGroups = deleteGroupRecursive(childGroups)
+          // 保留脚本，只更新子分组
+          const scripts = group.children.filter(isScript)
+          group.children = [...filteredChildGroups, ...scripts]
         }
         return true
       })
@@ -82,7 +84,7 @@ export const useScriptStore = defineStore('script', () => {
     if (group) {
       script.createdAt = new Date().toISOString()
       script.updatedAt = new Date().toISOString()
-      group.scripts.push(script)
+      group.children.push(script)
       saveConfig()
     }
   }
@@ -90,13 +92,11 @@ export const useScriptStore = defineStore('script', () => {
   const updateScript = (groupId: string, scriptId: string, updatedScript: Partial<Script>) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
-      const index = group.scripts.findIndex(s => s.id === scriptId)
-      if (index !== -1) {
-        group.scripts[index] = {
-          ...group.scripts[index],
-          ...updatedScript,
+      const script = group.children.find((node): node is Script => isScript(node) && node.id === scriptId)
+      if (script) {
+        Object.assign(script, updatedScript, {
           updatedAt: new Date().toISOString()
-        }
+        })
         saveConfig()
       }
     }
@@ -105,7 +105,7 @@ export const useScriptStore = defineStore('script', () => {
   const deleteScript = (groupId: string, scriptId: string) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
-      group.scripts = group.scripts.filter(s => s.id !== scriptId)
+      group.children = group.children.filter(node => !(isScript(node) && node.id === scriptId))
       saveConfig()
     }
   }

@@ -1,15 +1,7 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
   import ScriptTree from './ScriptTree.vue'
-  import type { ScriptGroup } from '../../types/script'
-
-  interface TreeNode {
-    id: string
-    label: string
-    type: 'group' | 'script'
-    groupId?: string
-    children?: TreeNode[]
-  }
+  import type { ScriptGroup, ScriptNode } from '../../types/script'
 
   interface Props {
     groups: ScriptGroup[]
@@ -18,16 +10,16 @@
   }
 
   interface Emits {
-    (e: 'node-click', data: TreeNode): void
-    (e: 'node-expand', data: TreeNode): void
-    (e: 'node-collapse', data: TreeNode): void
+    (e: 'node-click', data: ScriptNode): void
+    (e: 'node-expand', data: ScriptNode): void
+    (e: 'node-collapse', data: ScriptNode): void
     (e: 'add-group'): void
     (e: 'add-script'): void
     (e: 'export-config'): void
     (e: 'import-config'): void
-    (e: 'duplicate-script', data: TreeNode): void
-    (e: 'edit-script', data: TreeNode): void
-    (e: 'delete-script', data: TreeNode): void
+    (e: 'duplicate-script', data: ScriptNode): void
+    (e: 'edit-script', data: ScriptNode): void
+    (e: 'delete-script', data: ScriptNode): void
     (e: 'delete-group', groupId: string): void
   }
 
@@ -52,15 +44,15 @@
     }
   }
 
-  const handleNodeClick = (data: TreeNode) => {
+  const handleNodeClick = (data: ScriptNode) => {
     emit('node-click', data)
   }
 
-  const handleNodeExpand = (data: TreeNode) => {
+  const handleNodeExpand = (data: ScriptNode) => {
     emit('node-expand', data)
   }
 
-  const handleNodeCollapse = (data: TreeNode) => {
+  const handleNodeCollapse = (data: ScriptNode) => {
     emit('node-collapse', data)
   }
 
@@ -72,15 +64,15 @@
     emit('add-script')
   }
 
-  const handleDuplicateScript = (data: TreeNode) => {
+  const handleDuplicateScript = (data: ScriptNode) => {
     emit('duplicate-script', data)
   }
 
-  const handleEditScript = (data: TreeNode) => {
+  const handleEditScript = (data: ScriptNode) => {
     emit('edit-script', data)
   }
 
-  const handleDeleteScript = (data: TreeNode) => {
+  const handleDeleteScript = (data: ScriptNode) => {
     emit('delete-script', data)
   }
 

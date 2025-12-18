@@ -3,15 +3,8 @@
   import ScriptSidebar from './ScriptSidebar.vue'
   import ScriptSection from './ScriptSection.vue'
   import { useScriptStore } from '../../stores/script'
-  import type { ScriptGroup, Script } from '../../types/script'
-
-  interface TreeNode {
-    id: string
-    label: string
-    type: 'group' | 'script'
-    groupId?: string
-    children?: TreeNode[]
-  }
+  import type { ScriptGroup, Script, ScriptNode } from '../../types/script'
+  import { isScriptGroup, isScript } from '../../types/script'
 
   const scriptStore = useScriptStore()
   const activeGroupId = ref<string>('')
@@ -33,8 +26,9 @@
       if (group.id === id) {
         return group
       }
-      if (group.children) {
-        const found = findGroupById(group.children, id)
+      const childGroups = group.children.filter(isScriptGroup)
+      if (childGroups.length > 0) {
+        const found = findGroupById(childGroups, id)
         if (found) return found
       }
     }
@@ -55,7 +49,11 @@
     if (isActiveGroup.value) return null
     const group = activeGroup.value
     if (!group) return null
-    return group.scripts.find(script => script.id === activeItemId.value) || null
+    return (
+      group.children.find(
+        (node): node is Script => isScript(node) && node.id === activeItemId.value
+      ) || null
+    )
   })
 
   // 设置默认选中项
@@ -84,7 +82,10 @@
         groups.forEach(group => {
           ids.push(group.id)
           if (group.children) {
-            ids.push(...collectAllGroupIds(group.children))
+            const childGroups = group.children.filter(isScriptGroup)
+            if (childGroups.length > 0) {
+              ids.push(...collectAllGroupIds(childGroups))
+            }
           }
         })
         return ids
@@ -103,7 +104,10 @@
         groups.forEach(group => {
           allGroupIds.push(group.id)
           if (group.children) {
-            collectGroupIds(group.children)
+            const childGroups = group.children.filter(isScriptGroup)
+            if (childGroups.length > 0) {
+              collectGroupIds(childGroups)
+            }
           }
         })
       }
@@ -120,7 +124,9 @@
           activeGroupId.value = scriptStore.uiState.activeGroupId
           activeItemId.value = scriptStore.uiState.activeGroupId
         } else {
-          const script = savedGroup.scripts.find(s => s.id === scriptStore.uiState.activeItemId)
+          const script = savedGroup.children.find(
+            (node): node is Script => isScript(node) && node.id === scriptStore.uiState.activeItemId
+          )
           if (script) {
             activeGroupId.value = scriptStore.uiState.activeGroupId
             activeItemId.value = scriptStore.uiState.activeItemId
@@ -162,24 +168,31 @@
   })
 
   // 监听活动项目变化
+  // 只在切换项目时更新名称，避免在用户输入时重置
   watch(
-    [activeGroup, activeScript],
-    ([group, script]) => {
-      if (isActiveGroup.value && group) {
-        activeItemName.value = group.name
-        scriptContent.value = ''
-        isNameSaved.value = true
-        isContentSaved.value = true
-      } else if (script) {
-        activeItemName.value = script.name
-        scriptContent.value = script.content || '// 请输入你的JS代码'
-        isNameSaved.value = true
-        isContentSaved.value = true
-      } else {
-        activeItemName.value = ''
-        scriptContent.value = '// 请输入你的JS代码'
-        isNameSaved.value = false
-        isContentSaved.value = false
+    [activeGroupId, activeItemId],
+    ([newGroupId, newItemId], [oldGroupId, oldItemId]) => {
+      // 只在切换项目时更新名称和内容
+      const groupChanged = newGroupId !== oldGroupId
+      const itemChanged = newItemId !== oldItemId
+
+      if (groupChanged || itemChanged) {
+        if (isActiveGroup.value && activeGroup.value) {
+          activeItemName.value = activeGroup.value.name
+          scriptContent.value = ''
+          isNameSaved.value = true
+          isContentSaved.value = true
+        } else if (activeScript.value) {
+          activeItemName.value = activeScript.value.name
+          scriptContent.value = activeScript.value.content || '// 请输入你的JS代码'
+          isNameSaved.value = true
+          isContentSaved.value = true
+        } else {
+          activeItemName.value = ''
+          scriptContent.value = '// 请输入你的JS代码'
+          isNameSaved.value = false
+          isContentSaved.value = false
+        }
       }
     },
     { immediate: true }
@@ -207,18 +220,18 @@
     }, 300)
   }
 
-  const handleNodeClick = (data: TreeNode) => {
+  const handleNodeClick = (data: ScriptNode) => {
     if (data.type === 'group') {
       activeGroupId.value = data.id
       activeItemId.value = data.id
-    } else if (data.type === 'script') {
-      activeGroupId.value = data.groupId!
+    } else if (data.type === 'script' && isScript(data)) {
+      activeGroupId.value = data.groupId
       activeItemId.value = data.id
     }
     saveUIState()
   }
 
-  const handleNodeExpand = (data: TreeNode) => {
+  const handleNodeExpand = (data: ScriptNode) => {
     if (!expandedKeys.value.includes(data.id)) {
       expandedKeys.value.push(data.id)
     }
@@ -227,7 +240,7 @@
     }
   }
 
-  const handleNodeCollapse = (data: TreeNode) => {
+  const handleNodeCollapse = (data: ScriptNode) => {
     const index = expandedKeys.value.indexOf(data.id)
     if (index > -1) {
       expandedKeys.value.splice(index, 1)
@@ -237,16 +250,20 @@
     }
   }
 
-  const handleAddGroup = () => {
+  const handleAddGroup = async () => {
     const newGroup: ScriptGroup = {
       id: crypto.randomUUID(),
       name: '新分类',
-      scripts: []
+      type: 'group',
+      children: []
     }
     scriptStore.addGroup(newGroup)
-    if (!activeGroupId.value) {
-      activeGroupId.value = newGroup.id
-    }
+    // 激活新创建的分组，确保可以编辑名称
+    activeGroupId.value = newGroup.id
+    activeItemId.value = newGroup.id
+    // 等待响应式更新完成后再设置名称，确保 watch 能正确触发
+    await nextTick()
+    activeItemName.value = newGroup.name
   }
 
   const handleAddScript = () => {
@@ -262,36 +279,43 @@
       id: crypto.randomUUID(),
       name: '新脚本',
       content: '// 请输入你的JS代码',
-      groupId
+      groupId,
+      type: 'script'
     }
     scriptStore.addScript(groupId, newScript)
     activeGroupId.value = groupId
     activeItemId.value = newScript.id
   }
 
-  const handleDuplicateScript = (scriptData: TreeNode) => {
-    const group = findGroupById(groups.value, scriptData.groupId!)
+  const handleDuplicateScript = (scriptData: ScriptNode) => {
+    if (!isScript(scriptData)) return
+    const group = findGroupById(groups.value, scriptData.groupId)
     if (group) {
-      const originalScript = group.scripts.find(s => s.id === scriptData.id)
+      const originalScript = group.children.find(
+        (node): node is Script => isScript(node) && node.id === scriptData.id
+      )
       if (originalScript) {
         const duplicatedScript: Script = {
           id: crypto.randomUUID(),
           name: `${originalScript.name} - 副本`,
           content: originalScript.content,
-          groupId: scriptData.groupId!
+          groupId: scriptData.groupId,
+          type: 'script'
         }
-        scriptStore.addScript(scriptData.groupId!, duplicatedScript)
+        scriptStore.addScript(scriptData.groupId, duplicatedScript)
       }
     }
   }
 
-  const handleEditScript = (scriptData: TreeNode) => {
-    activeGroupId.value = scriptData.groupId!
+  const handleEditScript = (scriptData: ScriptNode) => {
+    if (!isScript(scriptData)) return
+    activeGroupId.value = scriptData.groupId
     activeItemId.value = scriptData.id
   }
 
-  const handleDeleteScript = (scriptData: TreeNode) => {
-    scriptStore.deleteScript(scriptData.groupId!, scriptData.id)
+  const handleDeleteScript = (scriptData: ScriptNode) => {
+    if (!isScript(scriptData)) return
+    scriptStore.deleteScript(scriptData.groupId, scriptData.id)
     if (activeItemId.value === scriptData.id) {
       activeItemId.value = ''
       activeItemName.value = ''

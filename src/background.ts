@@ -249,10 +249,20 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         const tabId = tabs[0].id
 
         // 使用chrome.scripting.executeScript执行脚本
+        // 创建一个函数，将代码字符串通过字符串模板嵌入到函数体中
+        // 注意：函数会被序列化并在目标页面中执行，所以代码必须嵌入在函数内部
+        const scriptCode = request.code.replace(/`/g, '\\`').replace(/\$/g, '\\$')
+        const executeCode = new Function(`
+          try {
+            return eval(\`${scriptCode}\`);
+          } catch (error) {
+            throw error;
+          }
+        `) as () => unknown
         chrome.scripting
           .executeScript({
             target: { tabId },
-            func: new Function(request.code) as (...args: any[]) => unknown
+            func: executeCode
           })
           .then(results => {
             sendResponse({ success: true, results })
