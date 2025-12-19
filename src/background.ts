@@ -1,80 +1,14 @@
 import type { ProxyConfig, ProxyGroup, ProxyRule } from './types/proxy'
 import { isProxyGroup, isProxyRule } from './types/proxy'
+import { createStorageAdapter } from './stores/storage'
 
 let proxyConfig: ProxyConfig = {
   enabled: false,
   groups: []
 }
 
-// Chrome Storage 可能将数组存储为对象，需要转换回数组结构
-interface ChromeStorageGroup {
-  [key: string]: unknown
-  id?: string
-  name?: string
-  enabled?: boolean
-  type?: string
-  rules?: Record<string, unknown> | unknown[]
-  children?: Record<string, unknown> | unknown[]
-}
-
-interface ChromeStorageConfig {
-  enabled?: boolean
-  groups?: Record<string, ChromeStorageGroup> | ProxyGroup[]
-}
-
-// 递归转换分组数据：将对象结构转换为数组结构
-const convertGroupToArray = (group: unknown): ProxyGroup => {
-  const groupObj = group as ChromeStorageGroup
-  const convertedGroup: Partial<ProxyGroup> = {
-    id: groupObj.id as string,
-    name: groupObj.name as string,
-    enabled: groupObj.enabled as boolean,
-    type: 'group' as const,
-    children: []
-  }
-
-  // 转换 rules（如果存在且是对象）
-  if (groupObj.rules && typeof groupObj.rules === 'object' && !Array.isArray(groupObj.rules)) {
-    convertedGroup.children = Object.values(groupObj.rules) as ProxyRule[]
-  }
-
-  // 递归转换 children
-  if (
-    groupObj.children &&
-    typeof groupObj.children === 'object' &&
-    !Array.isArray(groupObj.children)
-  ) {
-    const convertedChildren = Object.values(groupObj.children).map(convertGroupToArray)
-    if (convertedGroup.children) {
-      convertedGroup.children.push(...convertedChildren)
-    } else {
-      convertedGroup.children = convertedChildren
-    }
-  }
-
-  return convertedGroup as ProxyGroup
-}
-
-// 数据转换函数：将对象结构转换为数组结构
-const convertChromeStorageToArray = (
-  data: ChromeStorageConfig | ProxyConfig | null
-): ProxyConfig => {
-  if (!data) {
-    return { enabled: false, groups: [] }
-  }
-
-  // 如果 groups 是对象（Chrome Storage 的数组转对象问题），需要转换
-  if (data.groups && typeof data.groups === 'object' && !Array.isArray(data.groups)) {
-    const convertedGroups = Object.values(data.groups).map(convertGroupToArray)
-    return {
-      enabled: data.enabled ?? false,
-      groups: convertedGroups
-    }
-  }
-
-  // 已经是数组结构，直接返回
-  return data as ProxyConfig
-}
+// 使用统一的存储适配器处理数据转换
+const storage = createStorageAdapter()
 
 // 构建declarativeNetRequest规则 - 借鉴XSwitch的匹配逻辑
 const buildDeclarativeRules = (rules: ProxyRule[]): chrome.declarativeNetRequest.Rule[] => {
@@ -158,10 +92,10 @@ console.log('📋 Extension ID:', chrome.runtime.id)
 console.log('📅 Start Time:', new Date().toISOString())
 
 // Load configuration from storage
-chrome.storage.local.get('proxyConfig', result => {
-  console.log('📦 Loading configuration from storage:', result)
-  if (result.proxyConfig) {
-    proxyConfig = convertChromeStorageToArray(result.proxyConfig)
+storage.get('proxyConfig').then(config => {
+  console.log('📦 Loading configuration from storage:', config)
+  if (config) {
+    proxyConfig = config as ProxyConfig
     console.log('✅ Configuration loaded:', proxyConfig)
     updateDeclarativeRules()
   } else {
@@ -170,10 +104,14 @@ chrome.storage.local.get('proxyConfig', result => {
 })
 
 // Listen for configuration changes
-chrome.storage.onChanged.addListener(changes => {
+chrome.storage.onChanged.addListener(async changes => {
   if (changes.proxyConfig) {
-    proxyConfig = convertChromeStorageToArray(changes.proxyConfig.newValue)
-    updateDeclarativeRules()
+    // 重新从存储获取并转换数据（使用统一的适配器）
+    const config = await storage.get('proxyConfig')
+    if (config) {
+      proxyConfig = config as ProxyConfig
+      updateDeclarativeRules()
+    }
   }
 })
 
