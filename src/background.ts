@@ -158,7 +158,7 @@ console.log('📋 Extension ID:', chrome.runtime.id)
 console.log('📅 Start Time:', new Date().toISOString())
 
 // Load configuration from storage
-chrome.storage.sync.get('proxyConfig', result => {
+chrome.storage.local.get('proxyConfig', result => {
   console.log('📦 Loading configuration from storage:', result)
   if (result.proxyConfig) {
     proxyConfig = convertChromeStorageToArray(result.proxyConfig)

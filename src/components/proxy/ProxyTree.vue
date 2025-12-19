@@ -1,32 +1,31 @@
 <script lang="ts" setup>
-  import { ref, watch } from 'vue'
+  import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+  import { ElMessage } from 'element-plus'
   import type { TreeInstance } from 'element-plus'
-  import type { ProxyGroup, ProxyNode } from '../../types/proxy'
+  import { useProxyStore } from '../../stores/proxy'
+  import type { ProxyGroup, ProxyNode, ProxyRule } from '../../types/proxy'
+  import { isProxyRule, isProxyGroup } from '../../types/proxy'
 
   interface Props {
     groups: ProxyGroup[]
     filterText: string
-    expandedKeys: string[]
-    activeItemId: string
   }
 
   interface Emits {
     (e: 'node-click', data: ProxyNode): void
-    (e: 'node-expand', data: ProxyNode): void
-    (e: 'node-collapse', data: ProxyNode): void
-    (e: 'checkbox-change', data: ProxyNode): void
-    (e: 'add-group', parentId?: string): void
-    (e: 'add-proxy', parentId: string): void
-    (e: 'duplicate-rule', data: ProxyNode): void
     (e: 'edit-rule', data: ProxyNode): void
-    (e: 'delete-rule', data: ProxyNode): void
-    (e: 'delete-group', groupId: string): void
   }
 
   const props = defineProps<Props>()
   const emit = defineEmits<Emits>()
 
+  const proxyStore = useProxyStore()
   const treeRef = ref<TreeInstance>()
+
+  // Tree 自己管理展开和选中状态
+  const expandedKeys = ref<string[]>([])
+  const activeItemId = ref<string>('')
+  let uiStateSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   // el-tree 配置：直接使用 name 字段作为 label，children 字段作为子节点
   const treeProps = {
@@ -43,6 +42,69 @@
     return node.name.toLowerCase().includes(value.toLowerCase())
   }
 
+  // 收集所有分组ID
+  const collectAllGroupIds = (groups: ProxyGroup[]): string[] => {
+    const ids: string[] = []
+    groups.forEach(group => {
+      ids.push(group.id)
+      const childGroups = group.children.filter(isProxyGroup)
+      if (childGroups.length > 0) {
+        ids.push(...collectAllGroupIds(childGroups))
+      }
+    })
+    return ids
+  }
+
+  // 保存 UI 状态（防抖）
+  const saveUIState = () => {
+    if (uiStateSaveTimer) {
+      clearTimeout(uiStateSaveTimer)
+    }
+    uiStateSaveTimer = setTimeout(() => {
+      proxyStore.uiState.expandedKeys = [...expandedKeys.value]
+      proxyStore.uiState.activeItemId = activeItemId.value
+      proxyStore.saveUIState()
+    }, 300)
+  }
+
+  // 初始化：加载保存的 UI 状态
+  onMounted(async () => {
+    await proxyStore.loadUIState()
+    await nextTick()
+
+    // 恢复展开状态
+    const savedExpandedKeys = Array.isArray(proxyStore.uiState.expandedKeys)
+      ? [...proxyStore.uiState.expandedKeys]
+      : []
+
+    if (savedExpandedKeys.length > 0) {
+      // 过滤掉不存在的节点ID
+      const allGroupIds = collectAllGroupIds(props.groups)
+      const validExpandedKeys = savedExpandedKeys.filter(id => allGroupIds.includes(id))
+      expandedKeys.value = validExpandedKeys.length > 0 ? validExpandedKeys : allGroupIds
+    } else {
+      // 默认展开所有节点
+      expandedKeys.value = collectAllGroupIds(props.groups)
+    }
+
+    // 恢复选中状态
+    if (proxyStore.uiState.activeItemId) {
+      activeItemId.value = proxyStore.uiState.activeItemId
+      await nextTick()
+      treeRef.value?.setCurrentKey(activeItemId.value)
+    }
+  })
+
+  // 组件卸载前保存状态
+  onUnmounted(() => {
+    if (uiStateSaveTimer) {
+      clearTimeout(uiStateSaveTimer)
+    }
+    proxyStore.uiState.expandedKeys = [...expandedKeys.value]
+    proxyStore.uiState.activeItemId = activeItemId.value
+    proxyStore.saveUIState()
+  })
+
   watch(
     () => props.filterText,
     val => {
@@ -50,42 +112,141 @@
     }
   )
 
+  // 监听 groups 变化，更新 expandedKeys（过滤无效ID）
+  watch(
+    () => props.groups,
+    () => {
+      const allGroupIds = collectAllGroupIds(props.groups)
+      expandedKeys.value = expandedKeys.value.filter(id => allGroupIds.includes(id))
+    },
+    {
+      deep: true
+    }
+  )
+
+  // 监听展开状态变化，保存
+  watch(
+    expandedKeys,
+    () => {
+      saveUIState()
+    },
+    {
+      deep: true
+    }
+  )
+
+  // 监听选中状态变化，保存
+  watch(activeItemId, () => {
+    saveUIState()
+  })
+
+  // 节点点击 - 更新选中状态并通知父组件
   const handleNodeClick = (data: ProxyNode) => {
+    activeItemId.value = data.id
+    // :current-node-key 绑定会自动更新树的选中状态，不需要手动调用 setCurrentKey
+    // 通知 Sidebar 更新内容区域状态
     emit('node-click', data)
   }
 
+  // 节点展开 - 更新展开状态
   const handleNodeExpand = (data: ProxyNode) => {
-    emit('node-expand', data)
+    if (!expandedKeys.value.includes(data.id)) {
+      expandedKeys.value.push(data.id)
+    }
   }
 
+  // 节点折叠 - 更新展开状态
   const handleNodeCollapse = (data: ProxyNode) => {
-    emit('node-collapse', data)
+    const index = expandedKeys.value.indexOf(data.id)
+    if (index > -1) {
+      expandedKeys.value.splice(index, 1)
+    }
   }
 
+  // 复选框变更 - 直接处理
   const handleCheckboxChange = (data: ProxyNode) => {
-    emit('checkbox-change', data)
+    if (isProxyRule(data)) {
+      proxyStore.updateRule(data.groupId, data.id, { enabled: !data.enabled })
+    }
   }
 
+  // 添加分组 - 直接处理
+  const handleAddGroup = (parentId?: string) => {
+    const newGroup: ProxyGroup = {
+      id: crypto.randomUUID(),
+      name: '新分类',
+      enabled: false,
+      type: 'group',
+      children: []
+    }
+    proxyStore.addGroup(newGroup, parentId)
+  }
+
+  // 添加代理规则 - 直接处理
+  const handleAddProxy = (parentId: string) => {
+    const newRule: ProxyRule = {
+      id: crypto.randomUUID(),
+      name: '新代理',
+      sourceUrl: '',
+      targetUrl: '',
+      enabled: false,
+      groupId: parentId,
+      type: 'rule'
+    }
+    proxyStore.addRule(parentId, newRule)
+  }
+
+  // 分组下拉菜单命令处理
   const handleDropdownCommand = (command: string, parentData: ProxyNode) => {
     if (command === 'category') {
-      emit('add-group', parentData.id)
+      handleAddGroup(parentData.id)
     } else if (command === 'proxy') {
-      emit('add-proxy', parentData.id)
+      handleAddProxy(parentData.id)
     }
   }
 
+  // 复制规则 - 直接处理
+  const handleDuplicateRule = (ruleData: ProxyNode) => {
+    if (!isProxyRule(ruleData)) return
+    const duplicatedRule: ProxyRule = {
+      id: crypto.randomUUID(),
+      name: `${ruleData.name} - 副本`,
+      sourceUrl: ruleData.sourceUrl || '',
+      targetUrl: ruleData.targetUrl || '',
+      enabled: false,
+      groupId: ruleData.groupId,
+      type: 'rule'
+    }
+    proxyStore.addRule(ruleData.groupId, duplicatedRule)
+  }
+
+  // 编辑规则 - 需要通知父组件切换到编辑模式
+  const handleEditRule = (ruleData: ProxyNode) => {
+    emit('edit-rule', ruleData)
+  }
+
+  // 删除规则 - 直接处理
+  const handleDeleteRule = (ruleData: ProxyNode) => {
+    if (!isProxyRule(ruleData)) return
+    proxyStore.deleteRule(ruleData.groupId, ruleData.id)
+    ElMessage.success('代理规则已删除')
+  }
+
+  // 规则下拉菜单命令处理
   const handleRuleDropdownCommand = (command: string, ruleData: ProxyNode) => {
     if (command === 'duplicate') {
-      emit('duplicate-rule', ruleData)
+      handleDuplicateRule(ruleData)
     } else if (command === 'edit') {
-      emit('edit-rule', ruleData)
+      handleEditRule(ruleData)
     } else if (command === 'delete') {
-      emit('delete-rule', ruleData)
+      handleDeleteRule(ruleData)
     }
   }
 
+  // 删除分组 - 直接处理
   const handleDeleteGroup = (groupId: string) => {
-    emit('delete-group', groupId)
+    proxyStore.deleteGroup(groupId)
+    ElMessage.success('分组已删除')
   }
 </script>
 

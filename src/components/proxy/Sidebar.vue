@@ -1,90 +1,149 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
+  import { ElMessage } from 'element-plus'
   import ProxyTree from './ProxyTree.vue'
-  import type { ProxyGroup, ProxyNode } from '../../types/proxy'
+  import { useProxyStore } from '../../stores/proxy'
+  import type { ProxyGroup, ProxyNode, ProxyRule } from '../../types/proxy'
 
   interface Props {
     groups: ProxyGroup[]
-    expandedKeys: string[]
-    activeItemId: string
+    activeGroupId: string
   }
 
   interface Emits {
-    (e: 'node-click', data: ProxyNode): void
-    (e: 'node-expand', data: ProxyNode): void
-    (e: 'node-collapse', data: ProxyNode): void
-    (e: 'checkbox-change', data: ProxyNode): void
-    (e: 'add-group'): void
-    (e: 'add-proxy'): void
-    (e: 'export-config'): void
-    (e: 'import-config'): void
-    (e: 'duplicate-rule', data: ProxyNode): void
+    (e: 'update:activeGroupId', value: string): void
+    (e: 'update:activeItemId', value: string): void
     (e: 'edit-rule', data: ProxyNode): void
-    (e: 'delete-rule', data: ProxyNode): void
-    (e: 'delete-group', groupId: string): void
   }
 
-  defineProps<Props>()
+  const props = defineProps<Props>()
   const emit = defineEmits<Emits>()
 
+  const proxyStore = useProxyStore()
   const filterText = ref('')
 
+  // Header 下拉菜单：创建顶级分组或代理
   const handleDropdownCommand = (command: string) => {
     if (command === 'category') {
-      emit('add-group')
+      const newGroup: ProxyGroup = {
+        id: crypto.randomUUID(),
+        name: '新分类',
+        enabled: false,
+        type: 'group',
+        children: []
+      }
+      proxyStore.addGroup(newGroup)
     } else if (command === 'proxy') {
-      emit('add-proxy')
+      const groupId = props.activeGroupId
+      if (!groupId) {
+        // 如果没有选中分组，先创建一个默认分组
+        const newGroup: ProxyGroup = {
+          id: crypto.randomUUID(),
+          name: '新分类',
+          enabled: false,
+          type: 'group',
+          children: []
+        }
+        proxyStore.addGroup(newGroup)
+        return
+      }
+      const newRule: ProxyRule = {
+        id: crypto.randomUUID(),
+        name: '新代理',
+        sourceUrl: '',
+        targetUrl: '',
+        enabled: false,
+        groupId,
+        type: 'rule'
+      }
+      proxyStore.addRule(groupId, newRule)
     }
+  }
+
+  // 导出配置 - 直接处理
+  const handleExportConfig = () => {
+    try {
+      const exportData = {
+        version: '1.0.0',
+        exportTime: new Date().toISOString(),
+        config: proxyStore.config
+      }
+
+      const dataStr = JSON.stringify(exportData, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(dataBlob)
+      link.download = `proxy-config-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+
+      URL.revokeObjectURL(link.href)
+      ElMessage.success('配置导出成功')
+    } catch (error) {
+      console.error('导出配置失败:', error)
+      ElMessage.error('导出配置失败')
+    }
+  }
+
+  // 导入配置 - 直接处理
+  const handleImportConfig = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async event => {
+      const file = (event.target as HTMLInputElement).files?.[0]
+      if (!file) return
+
+      try {
+        const text = await file.text()
+        const importData = JSON.parse(text)
+
+        // 验证导入数据的格式
+        if (!importData.config || !importData.config.groups) {
+          throw new Error('无效的配置文件格式')
+        }
+
+        // 确认是否要覆盖现有配置
+        const confirmMessage = '导入配置将覆盖现有配置，是否继续？'
+        if (confirm(confirmMessage)) {
+          // 更新配置
+          proxyStore.config.enabled = importData.config.enabled
+          proxyStore.config.groups = importData.config.groups
+
+          // 保存配置
+          await proxyStore.saveConfig()
+
+          ElMessage.success('配置导入成功')
+        }
+      } catch (error) {
+        console.error('导入配置失败:', error)
+        ElMessage.error(`导入配置失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      }
+    }
+    input.click()
   }
 
   const handleExportImportCommand = (command: string) => {
     if (command === 'export') {
-      emit('export-config')
+      handleExportConfig()
     } else if (command === 'import') {
-      emit('import-config')
+      handleImportConfig()
     }
   }
 
   const handleNodeClick = (data: ProxyNode) => {
-    emit('node-click', data)
-  }
-
-  const handleNodeExpand = (data: ProxyNode) => {
-    emit('node-expand', data)
-  }
-
-  const handleNodeCollapse = (data: ProxyNode) => {
-    emit('node-collapse', data)
-  }
-
-  const handleCheckboxChange = (data: ProxyNode) => {
-    emit('checkbox-change', data)
-  }
-
-  const handleAddGroup = (_parentId?: string) => {
-    // ProxyTree 传递的 parentId 暂时不使用，App.vue 会根据当前选中状态处理
-    emit('add-group')
-  }
-
-  const handleAddProxy = (_parentId: string) => {
-    // ProxyTree 传递的 parentId 暂时不使用，App.vue 会根据当前选中状态处理
-    emit('add-proxy')
-  }
-
-  const handleDuplicateRule = (data: ProxyNode) => {
-    emit('duplicate-rule', data)
+    // 直接处理节点点击逻辑，更新父组件的 UI 状态
+    if (data.type === 'group') {
+      emit('update:activeGroupId', data.id)
+      emit('update:activeItemId', data.id)
+    } else if (data.type === 'rule') {
+      emit('update:activeGroupId', data.groupId)
+      emit('update:activeItemId', data.id)
+    }
   }
 
   const handleEditRule = (data: ProxyNode) => {
     emit('edit-rule', data)
-  }
-
-  const handleDeleteRule = (data: ProxyNode) => {
-    emit('delete-rule', data)
-  }
-
-  const handleDeleteGroup = (groupId: string) => {
-    emit('delete-group', groupId)
   }
 </script>
 
@@ -136,18 +195,8 @@
       <ProxyTree
         :groups="groups"
         :filter-text="filterText"
-        :expanded-keys="expandedKeys"
-        :active-item-id="activeItemId"
         @node-click="handleNodeClick"
-        @node-expand="handleNodeExpand"
-        @node-collapse="handleNodeCollapse"
-        @checkbox-change="handleCheckboxChange"
-        @add-group="handleAddGroup"
-        @add-proxy="handleAddProxy"
-        @duplicate-rule="handleDuplicateRule"
         @edit-rule="handleEditRule"
-        @delete-rule="handleDeleteRule"
-        @delete-group="handleDeleteGroup"
       />
     </el-scrollbar>
   </div>

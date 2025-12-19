@@ -1,83 +1,132 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
+  import { ElMessage } from 'element-plus'
   import ScriptTree from './ScriptTree.vue'
-  import type { ScriptGroup, ScriptNode } from '../../types/script'
+  import { useScriptStore } from '../../stores/script'
+  import type { ScriptGroup, ScriptNode, Script } from '../../types/script'
 
   interface Props {
     groups: ScriptGroup[]
-    expandedKeys: string[]
-    activeItemId: string
+    activeGroupId: string
   }
 
   interface Emits {
-    (e: 'node-click', data: ScriptNode): void
-    (e: 'node-expand', data: ScriptNode): void
-    (e: 'node-collapse', data: ScriptNode): void
-    (e: 'add-group'): void
-    (e: 'add-script'): void
-    (e: 'export-config'): void
-    (e: 'import-config'): void
-    (e: 'duplicate-script', data: ScriptNode): void
+    (e: 'update:activeGroupId', value: string): void
+    (e: 'update:activeItemId', value: string): void
     (e: 'edit-script', data: ScriptNode): void
-    (e: 'delete-script', data: ScriptNode): void
-    (e: 'delete-group', groupId: string): void
   }
 
-  defineProps<Props>()
+  const props = defineProps<Props>()
   const emit = defineEmits<Emits>()
 
+  const scriptStore = useScriptStore()
   const filterText = ref('')
 
+  // Header 下拉菜单：创建顶级分组或脚本
   const handleDropdownCommand = (command: string) => {
     if (command === 'category') {
-      emit('add-group')
+      const newGroup: ScriptGroup = {
+        id: crypto.randomUUID(),
+        name: '新分类',
+        type: 'group',
+        children: []
+      }
+      scriptStore.addGroup(newGroup)
     } else if (command === 'script') {
-      emit('add-script')
+      const groupId = props.activeGroupId
+      if (!groupId) {
+        // 如果没有选中分组，先创建一个默认分组
+        const newGroup: ScriptGroup = {
+          id: crypto.randomUUID(),
+          name: '新分类',
+          type: 'group',
+          children: []
+        }
+        scriptStore.addGroup(newGroup)
+        return
+      }
+      const newScript: Script = {
+        id: crypto.randomUUID(),
+        name: '新脚本',
+        content: '// 请输入你的JS代码',
+        groupId,
+        type: 'script'
+      }
+      scriptStore.addScript(groupId, newScript)
     }
+  }
+
+  // 导出配置 - 直接处理
+  const handleExportConfig = () => {
+    try {
+      const exportData = {
+        version: '1.0.0',
+        exportTime: new Date().toISOString(),
+        config: scriptStore.config
+      }
+      const dataStr = JSON.stringify(exportData, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(dataBlob)
+      link.download = `script-config-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+      URL.revokeObjectURL(link.href)
+      ElMessage.success('配置导出成功')
+    } catch (error) {
+      console.error('导出配置失败:', error)
+      ElMessage.error('导出配置失败')
+    }
+  }
+
+  // 导入配置 - 直接处理
+  const handleImportConfig = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async event => {
+      const file = (event.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const importData = JSON.parse(text)
+        if (!importData.config || !importData.config.groups) {
+          throw new Error('无效的配置文件格式')
+        }
+        if (confirm('导入配置将覆盖现有配置，是否继续？')) {
+          scriptStore.config.enabled = importData.config.enabled
+          scriptStore.config.groups = importData.config.groups
+          await scriptStore.saveConfig()
+          ElMessage.success('配置导入成功')
+        }
+      } catch (error) {
+        console.error('导入配置失败:', error)
+        ElMessage.error(`导入配置失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      }
+    }
+    input.click()
   }
 
   const handleExportImportCommand = (command: string) => {
     if (command === 'export') {
-      emit('export-config')
+      handleExportConfig()
     } else if (command === 'import') {
-      emit('import-config')
+      handleImportConfig()
     }
   }
 
   const handleNodeClick = (data: ScriptNode) => {
-    emit('node-click', data)
-  }
-
-  const handleNodeExpand = (data: ScriptNode) => {
-    emit('node-expand', data)
-  }
-
-  const handleNodeCollapse = (data: ScriptNode) => {
-    emit('node-collapse', data)
-  }
-
-  const handleAddGroup = (_parentId?: string) => {
-    emit('add-group')
-  }
-
-  const handleAddScript = (_parentId: string) => {
-    emit('add-script')
-  }
-
-  const handleDuplicateScript = (data: ScriptNode) => {
-    emit('duplicate-script', data)
+    // 直接处理节点点击逻辑，更新父组件的 UI 状态
+    if (data.type === 'group') {
+      emit('update:activeGroupId', data.id)
+      emit('update:activeItemId', data.id)
+    } else if (data.type === 'script') {
+      emit('update:activeGroupId', data.groupId)
+      emit('update:activeItemId', data.id)
+    }
   }
 
   const handleEditScript = (data: ScriptNode) => {
     emit('edit-script', data)
-  }
-
-  const handleDeleteScript = (data: ScriptNode) => {
-    emit('delete-script', data)
-  }
-
-  const handleDeleteGroup = (groupId: string) => {
-    emit('delete-group', groupId)
   }
 </script>
 
@@ -129,17 +178,8 @@
       <ScriptTree
         :groups="groups"
         :filter-text="filterText"
-        :expanded-keys="expandedKeys"
-        :active-item-id="activeItemId"
         @node-click="handleNodeClick"
-        @node-expand="handleNodeExpand"
-        @node-collapse="handleNodeCollapse"
-        @add-group="handleAddGroup"
-        @add-script="handleAddScript"
-        @duplicate-script="handleDuplicateScript"
         @edit-script="handleEditScript"
-        @delete-script="handleDeleteScript"
-        @delete-group="handleDeleteGroup"
       />
     </el-scrollbar>
   </div>

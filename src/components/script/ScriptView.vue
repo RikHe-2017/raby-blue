@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-  import { onMounted, onUnmounted, ref, watch, computed, nextTick } from 'vue'
+  import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
   import ScriptSidebar from './ScriptSidebar.vue'
   import ScriptSection from './ScriptSection.vue'
   import { useScriptStore } from '../../stores/script'
@@ -7,6 +7,7 @@
   import { isScriptGroup, isScript } from '../../types/script'
 
   const scriptStore = useScriptStore()
+  // 内容区域的状态（不需要持久化）
   const activeGroupId = ref<string>('')
   const activeItemId = ref<string>('')
   const scriptContent = ref('// 请输入你的JS代码')
@@ -15,8 +16,6 @@
   const isContentSaved = ref(false)
   let nameSaveTimer: ReturnType<typeof setTimeout> | null = null
   let contentSaveTimer: ReturnType<typeof setTimeout> | null = null
-  const expandedKeys = ref<string[]>([])
-  let uiStateSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   const groups = computed(() => scriptStore.groups)
 
@@ -66,57 +65,9 @@
 
   onMounted(async () => {
     await scriptStore.loadConfig()
+
+    // 恢复内容区域的选中状态（从 Tree 保存的状态中恢复）
     await scriptStore.loadUIState()
-
-    // 确保 expandedKeys 是数组格式
-    await nextTick()
-    const savedExpandedKeys = Array.isArray(scriptStore.uiState.expandedKeys)
-      ? [...scriptStore.uiState.expandedKeys]
-      : []
-
-    // 恢复UI状态
-    if (savedExpandedKeys.length > 0) {
-      const validExpandedKeys: string[] = []
-      const collectAllGroupIds = (groups: ScriptGroup[]): string[] => {
-        const ids: string[] = []
-        groups.forEach(group => {
-          ids.push(group.id)
-          if (group.children) {
-            const childGroups = group.children.filter(isScriptGroup)
-            if (childGroups.length > 0) {
-              ids.push(...collectAllGroupIds(childGroups))
-            }
-          }
-        })
-        return ids
-      }
-      const allGroupIds = collectAllGroupIds(groups.value)
-      savedExpandedKeys.forEach(id => {
-        if (allGroupIds.includes(id)) {
-          validExpandedKeys.push(id)
-        }
-      })
-      await nextTick()
-      expandedKeys.value = validExpandedKeys.length > 0 ? validExpandedKeys : allGroupIds
-    } else {
-      const allGroupIds: string[] = []
-      const collectGroupIds = (groups: ScriptGroup[]) => {
-        groups.forEach(group => {
-          allGroupIds.push(group.id)
-          if (group.children) {
-            const childGroups = group.children.filter(isScriptGroup)
-            if (childGroups.length > 0) {
-              collectGroupIds(childGroups)
-            }
-          }
-        })
-      }
-      collectGroupIds(groups.value)
-      await nextTick()
-      expandedKeys.value = allGroupIds
-    }
-
-    // 恢复选中状态
     if (scriptStore.uiState.activeGroupId && scriptStore.uiState.activeItemId) {
       const savedGroup = findGroupById(groups.value, scriptStore.uiState.activeGroupId)
       if (savedGroup) {
@@ -140,31 +91,16 @@
     } else {
       setDefaultActiveItem()
     }
-
-    isInitializing = false
-  })
-
-  let isInitializing = true
-  watch([activeGroupId, activeItemId], () => {
-    if (!isInitializing) {
-      saveUIState()
-    }
   })
 
   onUnmounted(() => {
+    // 清理定时器
     if (nameSaveTimer) {
       clearTimeout(nameSaveTimer)
     }
     if (contentSaveTimer) {
       clearTimeout(contentSaveTimer)
     }
-    if (uiStateSaveTimer) {
-      clearTimeout(uiStateSaveTimer)
-    }
-    scriptStore.uiState.expandedKeys = [...expandedKeys.value]
-    scriptStore.uiState.activeGroupId = activeGroupId.value
-    scriptStore.uiState.activeItemId = activeItemId.value
-    scriptStore.saveUIState()
   })
 
   // 监听活动项目变化
@@ -198,114 +134,13 @@
     { immediate: true }
   )
 
-  watch(
-    expandedKeys,
-    () => {
-      if (!isInitializing) {
-        saveUIState()
-      }
-    },
-    { deep: true }
-  )
+  // 监听内容区域状态变化，保存到 store（用于内容区域恢复）
+  watch([activeGroupId, activeItemId], () => {
+    scriptStore.uiState.activeGroupId = activeGroupId.value
+    scriptStore.uiState.activeItemId = activeItemId.value
+    scriptStore.saveUIState()
+  })
 
-  const saveUIState = () => {
-    if (uiStateSaveTimer) {
-      clearTimeout(uiStateSaveTimer)
-    }
-    uiStateSaveTimer = setTimeout(() => {
-      scriptStore.uiState.expandedKeys = [...expandedKeys.value]
-      scriptStore.uiState.activeGroupId = activeGroupId.value
-      scriptStore.uiState.activeItemId = activeItemId.value
-      scriptStore.saveUIState()
-    }, 300)
-  }
-
-  const handleNodeClick = (data: ScriptNode) => {
-    if (data.type === 'group') {
-      activeGroupId.value = data.id
-      activeItemId.value = data.id
-    } else if (data.type === 'script' && isScript(data)) {
-      activeGroupId.value = data.groupId
-      activeItemId.value = data.id
-    }
-    saveUIState()
-  }
-
-  const handleNodeExpand = (data: ScriptNode) => {
-    if (!expandedKeys.value.includes(data.id)) {
-      expandedKeys.value.push(data.id)
-    }
-    if (!isInitializing) {
-      saveUIState()
-    }
-  }
-
-  const handleNodeCollapse = (data: ScriptNode) => {
-    const index = expandedKeys.value.indexOf(data.id)
-    if (index > -1) {
-      expandedKeys.value.splice(index, 1)
-    }
-    if (!isInitializing) {
-      saveUIState()
-    }
-  }
-
-  const handleAddGroup = async () => {
-    const newGroup: ScriptGroup = {
-      id: crypto.randomUUID(),
-      name: '新分类',
-      type: 'group',
-      children: []
-    }
-    scriptStore.addGroup(newGroup)
-    // 激活新创建的分组，确保可以编辑名称
-    activeGroupId.value = newGroup.id
-    activeItemId.value = newGroup.id
-    // 等待响应式更新完成后再设置名称，确保 watch 能正确触发
-    await nextTick()
-    activeItemName.value = newGroup.name
-  }
-
-  const handleAddScript = () => {
-    if (!activeGroupId.value) {
-      handleAddGroup()
-      return
-    }
-    handleAddScriptToGroup(activeGroupId.value)
-  }
-
-  const handleAddScriptToGroup = (groupId: string) => {
-    const newScript: Script = {
-      id: crypto.randomUUID(),
-      name: '新脚本',
-      content: '// 请输入你的JS代码',
-      groupId,
-      type: 'script'
-    }
-    scriptStore.addScript(groupId, newScript)
-    activeGroupId.value = groupId
-    activeItemId.value = newScript.id
-  }
-
-  const handleDuplicateScript = (scriptData: ScriptNode) => {
-    if (!isScript(scriptData)) return
-    const group = findGroupById(groups.value, scriptData.groupId)
-    if (group) {
-      const originalScript = group.children.find(
-        (node): node is Script => isScript(node) && node.id === scriptData.id
-      )
-      if (originalScript) {
-        const duplicatedScript: Script = {
-          id: crypto.randomUUID(),
-          name: `${originalScript.name} - 副本`,
-          content: originalScript.content,
-          groupId: scriptData.groupId,
-          type: 'script'
-        }
-        scriptStore.addScript(scriptData.groupId, duplicatedScript)
-      }
-    }
-  }
 
   const handleEditScript = (scriptData: ScriptNode) => {
     if (!isScript(scriptData)) return
@@ -313,23 +148,26 @@
     activeItemId.value = scriptData.id
   }
 
-  const handleDeleteScript = (scriptData: ScriptNode) => {
-    if (!isScript(scriptData)) return
-    scriptStore.deleteScript(scriptData.groupId, scriptData.id)
-    if (activeItemId.value === scriptData.id) {
-      activeItemId.value = ''
-      activeItemName.value = ''
-      scriptContent.value = '// 请输入你的JS代码'
-    }
-    ElMessage.success('脚本已删除')
-  }
-
-  const handleDeleteGroup = (groupId: string) => {
-    scriptStore.deleteGroup(groupId)
-    if (activeGroupId.value === groupId) {
-      activeGroupId.value = groups.value.length > 0 ? groups.value[0].id : ''
-    }
-  }
+  // 监听 groups 变化，处理删除后的 UI 状态清理
+  watch(
+    groups,
+    () => {
+      // 检查当前选中的脚本是否还存在
+      if (activeScript.value === null && activeItemId.value && activeItemId.value !== activeGroupId.value) {
+        // 脚本被删除了，清空选中状态
+        activeItemId.value = ''
+        activeItemName.value = ''
+        scriptContent.value = '// 请输入你的JS代码'
+      }
+      // 检查当前选中的分组是否还存在
+      if (activeGroup.value === null && activeGroupId.value) {
+        // 分组被删除了，切换到第一个分组或清空
+        activeGroupId.value = groups.value.length > 0 ? groups.value[0].id : ''
+        activeItemId.value = activeGroupId.value || ''
+      }
+    },
+    { deep: true }
+  )
 
   const handleSaveItemName = async () => {
     if (isActiveGroup.value && activeGroupId.value && activeItemName.value.trim()) {
@@ -354,53 +192,6 @@
     }, 500)
   })
 
-  const handleExportConfig = () => {
-    try {
-      const exportData = {
-        version: '1.0.0',
-        exportTime: new Date().toISOString(),
-        config: scriptStore.config
-      }
-      const dataStr = JSON.stringify(exportData, null, 2)
-      const dataBlob = new Blob([dataStr], { type: 'application/json' })
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(dataBlob)
-      link.download = `script-config-${new Date().toISOString().slice(0, 10)}.json`
-      link.click()
-      URL.revokeObjectURL(link.href)
-      ElMessage.success('配置导出成功')
-    } catch (error) {
-      console.error('导出配置失败:', error)
-      ElMessage.error('导出配置失败')
-    }
-  }
-
-  const handleImportConfig = () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.json'
-    input.onchange = async event => {
-      const file = (event.target as HTMLInputElement).files?.[0]
-      if (!file) return
-      try {
-        const text = await file.text()
-        const importData = JSON.parse(text)
-        if (!importData.config || !importData.config.groups) {
-          throw new Error('无效的配置文件格式')
-        }
-        if (confirm('导入配置将覆盖现有配置，是否继续？')) {
-          scriptStore.config.enabled = importData.config.enabled
-          scriptStore.config.groups = importData.config.groups
-          await scriptStore.saveConfig()
-          ElMessage.success('配置导入成功')
-        }
-      } catch (error) {
-        console.error('导入配置失败:', error)
-        ElMessage.error(`导入配置失败: ${error instanceof Error ? error.message : '未知错误'}`)
-      }
-    }
-    input.click()
-  }
 
   const saveScriptContent = () => {
     if (activeScript.value) {
@@ -476,19 +267,10 @@
     <!-- 左侧脚本列表 -->
     <ScriptSidebar
       :groups="groups"
-      :expanded-keys="expandedKeys"
-      :active-item-id="activeItemId"
-      @node-click="handleNodeClick"
-      @node-expand="handleNodeExpand"
-      @node-collapse="handleNodeCollapse"
-      @add-group="handleAddGroup"
-      @add-script="handleAddScript"
-      @export-config="handleExportConfig"
-      @import-config="handleImportConfig"
-      @duplicate-script="handleDuplicateScript"
+      :active-group-id="activeGroupId"
+      @update:active-group-id="val => (activeGroupId = val)"
+      @update:active-item-id="val => (activeItemId = val)"
       @edit-script="handleEditScript"
-      @delete-script="handleDeleteScript"
-      @delete-group="handleDeleteGroup"
     />
 
     <!-- 右侧内容区域 -->

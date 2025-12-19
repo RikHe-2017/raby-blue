@@ -5,6 +5,9 @@ import { isProxyGroup } from '../../types/proxy'
 /**
  * Chrome Storage 适配器
  * 用于浏览器扩展环境，需要处理 Chrome Storage 的数组/对象转换问题
+ * 使用 chrome.storage.local 而不是 sync，因为：
+ * 1. local 存储限制更大（约 10MB），而 sync 每个项目限制约 8KB
+ * 2. 代理配置通常不需要跨设备同步
  */
 export class ChromeStorageAdapter extends StorageAdapter {
   /**
@@ -116,13 +119,13 @@ export class ChromeStorageAdapter extends StorageAdapter {
   }
 
   async get(key: string): Promise<any> {
-    const result = await chrome.storage.sync.get(key)
+    const result = await chrome.storage.local.get(key)
     const data = result[key]
     return this.convertChromeStorageToArray(data)
   }
 
   async set(key: string, value: any): Promise<void> {
     const convertedValue = this.convertArrayToChromeStorage(value)
-    await chrome.storage.sync.set({ [key]: convertedValue })
+    await chrome.storage.local.set({ [key]: convertedValue })
   }
 }

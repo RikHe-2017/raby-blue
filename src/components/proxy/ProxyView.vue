@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-  import { onMounted, onUnmounted, ref, watch, computed, nextTick } from 'vue'
+  import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
   import Sidebar from './Sidebar.vue'
   import ContentHeader from './ContentHeader.vue'
   import ConfigSection from './ConfigSection.vue'
@@ -9,6 +9,7 @@
 
   const proxyStore = useProxyStore()
   const proxyEnabled = ref(false)
+  // 内容区域的状态（不需要持久化）
   const activeGroupId = ref<string>('')
   const activeItemId = ref<string>('')
   const jsonConfig = ref('')
@@ -17,8 +18,6 @@
   const isConfigSaved = ref(false)
   let nameSaveTimer: ReturnType<typeof setTimeout> | null = null
   let configSaveTimer: ReturnType<typeof setTimeout> | null = null
-  const expandedKeys = ref<string[]>([])
-  let uiStateSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   const groups = computed(() => proxyStore.groups || [])
 
@@ -100,67 +99,17 @@
 
   onMounted(async () => {
     await proxyStore.loadConfig()
-    await proxyStore.loadUIState()
     proxyEnabled.value = proxyStore.enabled
 
-    // 确保 expandedKeys 是数组格式
-    await nextTick()
-    const savedExpandedKeys = Array.isArray(proxyStore.uiState.expandedKeys)
-      ? [...proxyStore.uiState.expandedKeys]
-      : []
-
-    // 恢复UI状态
-    if (savedExpandedKeys.length > 0) {
-      // 过滤掉不存在的节点ID（可能被删除了）
-      const validExpandedKeys: string[] = []
-      const collectAllGroupIds = (groups: ProxyGroup[]): string[] => {
-        const ids: string[] = []
-        groups.forEach(group => {
-          ids.push(group.id)
-          const childGroups = group.children.filter(isProxyGroup)
-          if (childGroups.length > 0) {
-            ids.push(...collectAllGroupIds(childGroups))
-          }
-        })
-        return ids
-      }
-      const allGroupIds = collectAllGroupIds(groups.value)
-      savedExpandedKeys.forEach(id => {
-        if (allGroupIds.includes(id)) {
-          validExpandedKeys.push(id)
-        }
-      })
-      await nextTick()
-      expandedKeys.value = validExpandedKeys.length > 0 ? validExpandedKeys : allGroupIds
-    } else {
-      // 如果没有保存的状态，默认展开所有节点
-      const allGroupIds: string[] = []
-      const collectGroupIds = (groups: ProxyGroup[]) => {
-        groups.forEach(group => {
-          allGroupIds.push(group.id)
-          const childGroups = group.children.filter(isProxyGroup)
-          if (childGroups.length > 0) {
-            collectGroupIds(childGroups)
-          }
-        })
-      }
-      collectGroupIds(groups.value)
-      await nextTick()
-      expandedKeys.value = allGroupIds
-    }
-
-    // 恢复选中状态
+    // 恢复内容区域的选中状态（从 Tree 保存的状态中恢复）
+    await proxyStore.loadUIState()
     if (proxyStore.uiState.activeGroupId && proxyStore.uiState.activeItemId) {
-      // 验证保存的ID是否仍然存在
       const savedGroup = findGroupById(groups.value, proxyStore.uiState.activeGroupId)
       if (savedGroup) {
-        // 检查是选中分组还是规则
         if (proxyStore.uiState.activeItemId === proxyStore.uiState.activeGroupId) {
-          // 选中分组
           activeGroupId.value = proxyStore.uiState.activeGroupId
           activeItemId.value = proxyStore.uiState.activeGroupId
         } else {
-          // 检查规则是否存在
           const rule = savedGroup.children.find(
             node => isProxyRule(node) && node.id === proxyStore.uiState.activeItemId
           )
@@ -168,29 +117,14 @@
             activeGroupId.value = proxyStore.uiState.activeGroupId
             activeItemId.value = proxyStore.uiState.activeItemId
           } else {
-            // 规则不存在，使用默认逻辑
             setDefaultActiveItem()
           }
         }
       } else {
-        // 分组不存在，使用默认逻辑
         setDefaultActiveItem()
       }
     } else {
-      // 没有保存的状态，使用默认逻辑
       setDefaultActiveItem()
-    }
-
-    // 初始化完成，允许 watch 触发保存
-    isInitializing = false
-  })
-
-  // 监听选中状态变化，保存UI状态
-  let isInitializing = true
-  watch([activeGroupId, activeItemId], () => {
-    // 初始化完成后才保存
-    if (!isInitializing) {
-      saveUIState()
     }
   })
 
@@ -202,14 +136,6 @@
     if (configSaveTimer) {
       clearTimeout(configSaveTimer)
     }
-    if (uiStateSaveTimer) {
-      clearTimeout(uiStateSaveTimer)
-    }
-    // 组件卸载前保存一次UI状态
-    proxyStore.uiState.expandedKeys = [...expandedKeys.value]
-    proxyStore.uiState.activeGroupId = activeGroupId.value
-    proxyStore.uiState.activeItemId = activeItemId.value
-    proxyStore.saveUIState()
   })
 
   watch(
@@ -253,140 +179,16 @@
     { immediate: true }
   )
 
-  // 监听展开状态变化，保存UI状态
-  watch(
-    expandedKeys,
-    () => {
-      // 初始化完成后才保存
-      if (!isInitializing) {
-        saveUIState()
-      }
-    },
-    { deep: true }
-  )
-
-  // 保存UI状态（防抖）
-  const saveUIState = () => {
-    // 清除之前的定时器
-    if (uiStateSaveTimer) {
-      clearTimeout(uiStateSaveTimer)
-    }
-
-    // 防抖保存，300ms后保存
-    uiStateSaveTimer = setTimeout(() => {
-      proxyStore.uiState.expandedKeys = [...expandedKeys.value]
-      proxyStore.uiState.activeGroupId = activeGroupId.value
-      proxyStore.uiState.activeItemId = activeItemId.value
-      proxyStore.saveUIState()
-    }, 300)
-  }
-
   const handleGlobalProxyToggle = () => {
     proxyStore.toggleGlobalProxy()
   }
 
-  const handleNodeClick = (data: ProxyNode) => {
-    if (isProxyGroup(data)) {
-      // 点击分组，设置为活动分组和活动项目
-      activeGroupId.value = data.id
-      activeItemId.value = data.id
-    } else if (isProxyRule(data)) {
-      // 点击代理规则，设置其所属分组为活动分组，规则为活动项目
-      activeGroupId.value = data.groupId
-      activeItemId.value = data.id
-    }
-    // 保存UI状态
-    saveUIState()
-  }
-
-  // 处理节点展开
-  const handleNodeExpand = (data: ProxyNode) => {
-    if (!expandedKeys.value.includes(data.id)) {
-      expandedKeys.value.push(data.id)
-    }
-    // 初始化完成后才保存
-    if (!isInitializing) {
-      saveUIState()
-    }
-  }
-
-  // 处理节点折叠
-  const handleNodeCollapse = (data: ProxyNode) => {
-    const index = expandedKeys.value.indexOf(data.id)
-    if (index > -1) {
-      expandedKeys.value.splice(index, 1)
-    }
-    // 初始化完成后才保存
-    if (!isInitializing) {
-      saveUIState()
-    }
-  }
-
-  const handleCheckboxChange = (data: ProxyNode) => {
-    // 现在只有代理规则会有复选框
-    if (isProxyRule(data)) {
-      proxyStore.updateRule(data.groupId, data.id, { enabled: data.enabled })
-
-      // 如果当前没有选中的代理规则，自动激活第一个被启用的代理
-      if (!activeItemId.value || activeItemId.value === activeGroupId.value) {
-        const firstEnabledRule = findFirstEnabledRule(groups.value)
-        if (firstEnabledRule) {
-          activeGroupId.value = firstEnabledRule.groupId
-          activeItemId.value = firstEnabledRule.ruleId
-        }
-      }
-    }
-  }
-
-  const handleAddGroup = () => {
-    const newGroup: ProxyGroup = {
-      id: crypto.randomUUID(),
-      name: '新分类',
-      enabled: false,
-      type: 'group',
-      children: []
-    }
-    proxyStore.addGroup(newGroup)
-    if (!activeGroupId.value) {
-      activeGroupId.value = newGroup.id
-    }
-  }
-
-  const handleAddProxy = () => {
-    if (!activeGroupId.value) {
-      // 如果没有选中分组，创建一个默认分组
-      handleAddGroup()
-      return
-    }
-    handleAddProxyToGroup(activeGroupId.value)
-  }
-
-  const handleAddProxyToGroup = (groupId: string) => {
-    const newRule: ProxyRule = {
-      id: crypto.randomUUID(),
-      name: '新代理',
-      sourceUrl: '',
-      targetUrl: '',
-      enabled: false,
-      groupId,
-      type: 'rule'
-    }
-    proxyStore.addRule(groupId, newRule)
-  }
-
-  const handleDuplicateRule = (ruleData: ProxyNode) => {
-    if (!isProxyRule(ruleData)) return
-    const duplicatedRule: ProxyRule = {
-      id: crypto.randomUUID(),
-      name: `${ruleData.name} - 副本`,
-      sourceUrl: ruleData.sourceUrl || '',
-      targetUrl: ruleData.targetUrl || '',
-      enabled: false,
-      groupId: ruleData.groupId,
-      type: 'rule'
-    }
-    proxyStore.addRule(ruleData.groupId, duplicatedRule)
-  }
+  // 监听内容区域状态变化，保存到 store（用于内容区域恢复）
+  watch([activeGroupId, activeItemId], () => {
+    proxyStore.uiState.activeGroupId = activeGroupId.value
+    proxyStore.uiState.activeItemId = activeItemId.value
+    proxyStore.saveUIState()
+  })
 
   const handleEditRule = (ruleData: ProxyNode) => {
     if (!isProxyRule(ruleData)) return
@@ -395,27 +197,30 @@
     activeItemId.value = ruleData.id
   }
 
-  const handleDeleteRule = (ruleData: ProxyNode) => {
-    if (!isProxyRule(ruleData)) return
-    // 删除代理规则
-    proxyStore.deleteRule(ruleData.groupId, ruleData.id)
-
-    // 如果删除的是当前选中的规则，清空选中状态
-    if (activeItemId.value === ruleData.id) {
-      activeItemId.value = ''
-      activeItemName.value = ''
-      jsonConfig.value = JSON.stringify(defaultJsonConfig, null, 2)
-    }
-
-    ElMessage.success('代理规则已删除')
-  }
-
-  const handleDeleteGroup = (groupId: string) => {
-    proxyStore.deleteGroup(groupId)
-    if (activeGroupId.value === groupId) {
-      activeGroupId.value = groups.value.length > 0 ? groups.value[0].id : ''
-    }
-  }
+  // 监听 groups 变化，处理删除后的 UI 状态清理
+  watch(
+    groups,
+    () => {
+      // 检查当前选中的规则是否还存在
+      if (
+        activeRule.value === null &&
+        activeItemId.value &&
+        activeItemId.value !== activeGroupId.value
+      ) {
+        // 规则被删除了，清空选中状态
+        activeItemId.value = ''
+        activeItemName.value = ''
+        jsonConfig.value = JSON.stringify(defaultJsonConfig, null, 2)
+      }
+      // 检查当前选中的分组是否还存在
+      if (activeGroup.value === null && activeGroupId.value) {
+        // 分组被删除了，切换到第一个分组或清空
+        activeGroupId.value = groups.value.length > 0 ? groups.value[0].id : ''
+        activeItemId.value = activeGroupId.value || ''
+      }
+    },
+    { deep: true }
+  )
 
   const handleSaveItemName = async () => {
     if (isActiveGroup.value && activeGroupId.value && activeItemName.value.trim()) {
@@ -445,69 +250,6 @@
       handleSaveItemName()
     }, 500)
   })
-
-  // 导出配置功能
-  const handleExportConfig = () => {
-    try {
-      const exportData = {
-        version: '1.0.0',
-        exportTime: new Date().toISOString(),
-        config: proxyStore.config
-      }
-
-      const dataStr = JSON.stringify(exportData, null, 2)
-      const dataBlob = new Blob([dataStr], { type: 'application/json' })
-
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(dataBlob)
-      link.download = `proxy-config-${new Date().toISOString().slice(0, 10)}.json`
-      link.click()
-
-      URL.revokeObjectURL(link.href)
-      ElMessage.success('配置导出成功')
-    } catch (error) {
-      console.error('导出配置失败:', error)
-      ElMessage.error('导出配置失败')
-    }
-  }
-
-  // 导入配置功能
-  const handleImportConfig = () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.json'
-    input.onchange = async event => {
-      const file = (event.target as HTMLInputElement).files?.[0]
-      if (!file) return
-
-      try {
-        const text = await file.text()
-        const importData = JSON.parse(text)
-
-        // 验证导入数据的格式
-        if (!importData.config || !importData.config.groups) {
-          throw new Error('无效的配置文件格式')
-        }
-
-        // 确认是否要覆盖现有配置
-        const confirmMessage = '导入配置将覆盖现有配置，是否继续？'
-        if (confirm(confirmMessage)) {
-          // 更新配置
-          proxyStore.config.enabled = importData.config.enabled
-          proxyStore.config.groups = importData.config.groups
-
-          // 保存配置
-          await proxyStore.saveConfig()
-
-          ElMessage.success('配置导入成功')
-        }
-      } catch (error) {
-        console.error('导入配置失败:', error)
-        ElMessage.error(`导入配置失败: ${error instanceof Error ? error.message : '未知错误'}`)
-      }
-    }
-    input.click()
-  }
 
   const handleJsonInput = (value: string) => {
     const config = JSON.parse(value)
@@ -580,20 +322,10 @@
     <!-- 左侧分组列表 -->
     <Sidebar
       :groups="groups"
-      :expanded-keys="expandedKeys"
-      :active-item-id="activeItemId"
-      @node-click="handleNodeClick"
-      @node-expand="handleNodeExpand"
-      @node-collapse="handleNodeCollapse"
-      @checkbox-change="handleCheckboxChange"
-      @add-group="handleAddGroup"
-      @add-proxy="handleAddProxy"
-      @export-config="handleExportConfig"
-      @import-config="handleImportConfig"
-      @duplicate-rule="handleDuplicateRule"
+      :active-group-id="activeGroupId"
+      @update:active-group-id="val => (activeGroupId = val)"
+      @update:active-item-id="val => (activeItemId = val)"
       @edit-rule="handleEditRule"
-      @delete-rule="handleDeleteRule"
-      @delete-group="handleDeleteGroup"
     />
 
     <!-- 右侧内容区域 -->

@@ -1,10 +1,25 @@
 <script lang="ts" setup>
-  import { ref } from 'vue'
+  import { ref, onMounted, watch } from 'vue'
   import { ElConfigProvider } from 'element-plus'
   import ProxyView from './components/proxy/ProxyView.vue'
   import ScriptView from './components/script/ScriptView.vue'
+  import { createStorageAdapter } from './stores/storage'
 
+  const storage = createStorageAdapter()
   const activeTab = ref<'proxy' | 'script'>('proxy')
+
+  // 加载保存的 tab 状态
+  onMounted(async () => {
+    const savedTab = await storage.get('activeTab')
+    if (savedTab === 'proxy' || savedTab === 'script') {
+      activeTab.value = savedTab
+    }
+  })
+
+  // 保存 tab 状态
+  watch(activeTab, async val => {
+    await storage.set('activeTab', val)
+  })
 
   const handleTabChange = (tab: string | number) => {
     if (tab === 'proxy' || tab === 'script') {
