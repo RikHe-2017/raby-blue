@@ -11,6 +11,8 @@
     "preview": "vite preview",
     "generate-icons": "node scripts/generate-icons.js",
     "test:config-transfer": "node --experimental-strip-types --test src/components/config-transfer/transfer.test.mjs",
+    "test:proxy-sidebar": "node --experimental-strip-types --test src/components/proxy/sidebar-projections.test.mjs src/stores/proxy-rules.test.mjs",
+    "test:user-preferences": "node --experimental-strip-types --test src/stores/user-preferences.test.mjs",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
     "lint:check": "eslint . --ext .vue,.js,.ts,.jsx,.tsx",
     "format": "prettier --write .",

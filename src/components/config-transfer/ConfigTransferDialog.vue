@@ -5,6 +5,9 @@
   import { useProxyStore } from '../../stores/proxy'
   import { useScriptStore } from '../../stores/script'
   import { createStorageAdapter } from '../../stores/storage'
+  import { useUserPreferencesStore } from '../../stores/user-preferences'
+  import { createDefaultTreeState } from '../../stores/user-preferences-model'
+  import type { UserPreferencesPatch } from '../../stores/user-preferences-model'
   import type { ProxyNode } from '../../types/proxy'
   import type { ScriptNode } from '../../types/script'
   import { applyBackup, createBackup, parseBackup } from './transfer'
@@ -19,6 +22,7 @@
 
   const proxyStore = useProxyStore()
   const scriptStore = useScriptStore()
+  const userPreferences = useUserPreferencesStore()
   const storage = createStorageAdapter()
   const exportScope = ref<ExportScope>('all')
   const importMode = ref<ImportMode>('merge')
@@ -120,18 +124,14 @@
         importMode.value
       )
       const values: Record<string, unknown> = { ...configs }
-      const clearedState = { expandedKeys: [], activeGroupId: '', activeItemId: '' }
       if (importMode.value === 'replace') {
-        if (configs.proxyConfig) values.proxyUIState = clearedState
-        if (configs.scriptConfig) values.scriptUIState = clearedState
-      }
-      await storage.setMany(values)
+        const patch: UserPreferencesPatch = {}
+        if (configs.proxyConfig) patch.proxyUIState = createDefaultTreeState()
+        if (configs.scriptConfig) patch.scriptUIState = createDefaultTreeState()
+        await userPreferences.save(patch, values)
+      } else await storage.setMany(values)
       if (configs.proxyConfig) proxyStore.config = configs.proxyConfig
       if (configs.scriptConfig) scriptStore.config = configs.scriptConfig
-      if (importMode.value === 'replace') {
-        if (configs.proxyConfig) proxyStore.uiState = structuredClone(clearedState)
-        if (configs.scriptConfig) scriptStore.uiState = structuredClone(clearedState)
-      }
       emit('update:modelValue', false)
       ElMessage.success('配置导入成功')
     } catch (error) {

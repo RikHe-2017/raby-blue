@@ -1,12 +1,16 @@
 <script lang="ts" setup>
-  import { ref } from 'vue'
+  import { computed, ref } from 'vue'
   import ProxyTree from './ProxyTree.vue'
+  import ProxyQuickPanel from './ProxyQuickPanel.vue'
+  import { collectProxyEntries } from './sidebar-projections'
+  import { useUserPreferencesStore } from '../../stores/user-preferences'
   import { useProxyStore } from '../../stores/proxy'
   import type { ProxyGroup, ProxyNode, ProxyRule } from '../../types/proxy'
 
   interface Props {
     groups: ProxyGroup[]
     activeGroupId: string
+    activeItemId: string
   }
 
   interface Emits {
@@ -20,6 +24,44 @@
 
   const proxyStore = useProxyStore()
   const filterText = ref('')
+  const userPreferences = useUserPreferencesStore()
+  const sidebarPreferences = computed(() => userPreferences.preferences.proxySidebar)
+  const entries = computed(() => collectProxyEntries(props.groups))
+  const selectedEntries = computed(() => entries.value.filter(entry => entry.rule.enabled))
+  const favoriteEntries = computed(() =>
+    entries.value.filter(entry => entry.rule.favorite === true)
+  )
+  const quickPanels = computed(() => [
+    {
+      id: 'selected',
+      title: '已选择',
+      entries: selectedEntries.value,
+      grouped: sidebarPreferences.value.selectedGrouped,
+      emptyText: '暂无已选择的代理'
+    },
+    {
+      id: 'favorites',
+      title: '收藏',
+      entries: favoriteEntries.value,
+      grouped: sidebarPreferences.value.favoritesGrouped,
+      emptyText: '暂无收藏的代理'
+    }
+  ])
+
+  const updateMode = (panel: string, grouped: boolean) => {
+    userPreferences.update({
+      proxySidebar:
+        panel === 'selected' ? { selectedGrouped: grouped } : { favoritesGrouped: grouped }
+    })
+  }
+
+  const setRuleEnabled = (ruleId: string, enabled: boolean) => {
+    proxyStore.updateRule(ruleId, { enabled })
+  }
+
+  const setFavorite = (ruleId: string, favorite: boolean) => {
+    proxyStore.updateRule(ruleId, { favorite })
+  }
 
   // Header 下拉菜单：创建顶级分组或代理
   const handleDropdownCommand = (command: string) => {
@@ -94,27 +136,85 @@
       </div>
     </div>
 
-    <!-- 搜索框 -->
-    <div class="sidebar__search">
-      <el-input
-        v-model="filterText"
-        placeholder="搜索分类或代理..."
-        class="sidebar__search-input"
-        clearable
+    <el-scrollbar class="sidebar__panels">
+      <el-collapse
+        :model-value="sidebarPreferences.openPanels"
+        @update:model-value="
+          value => userPreferences.update({ proxySidebar: { openPanels: value as string[] } })
+        "
       >
-        <template #prefix>
-          <el-icon><i-ep-search /></el-icon>
-        </template>
-      </el-input>
-    </div>
+        <el-collapse-item
+          v-for="panel in quickPanels"
+          :key="panel.id"
+          :name="panel.id"
+          :disabled="!userPreferences.ready"
+        >
+          <template #title>
+            <span class="sidebar__panel-title">{{ panel.title }}</span>
+            <span class="sidebar__count">{{ panel.entries.length }}</span>
+            <span class="sidebar__mode" @click.stop @keydown.stop>
+              <el-switch
+                :model-value="panel.grouped"
+                :aria-label="`${panel.title}分类模式`"
+                :disabled="!userPreferences.ready"
+                active-text="分类"
+                inactive-text="简略"
+                size="small"
+                @update:model-value="value => updateMode(panel.id, value === true)"
+              />
+            </span>
+          </template>
+          <p
+            v-if="panel.id === 'selected' && !proxyStore.enabled && panel.entries.length"
+            class="sidebar__notice"
+          >
+            全局代理已关闭，已勾选项暂未生效
+          </p>
+          <ProxyQuickPanel
+            :entries="panel.entries"
+            :groups="groups"
+            :grouped="panel.grouped"
+            :active-item-id="activeItemId"
+            :favorites-ready="userPreferences.ready"
+            :empty-text="panel.emptyText"
+            @select="handleNodeClick"
+            @set-enabled="setRuleEnabled"
+            @set-favorite="setFavorite"
+          />
+        </el-collapse-item>
+        <el-collapse-item name="config" :disabled="!userPreferences.ready">
+          <template #title>
+            <span class="sidebar__panel-title">代理配置</span>
+            <span class="sidebar__count">{{ entries.length }}</span>
+          </template>
+          <!-- 搜索框 -->
+          <div class="sidebar__search">
+            <el-input
+              v-model="filterText"
+              placeholder="搜索分类或代理..."
+              class="sidebar__search-input"
+              clearable
+            >
+              <template #prefix>
+                <el-icon><i-ep-search /></el-icon>
+              </template>
+            </el-input>
+          </div>
 
-    <el-scrollbar class="sidebar__tree">
-      <ProxyTree
-        :groups="groups"
-        :filter-text="filterText"
-        @node-click="handleNodeClick"
-        @edit-rule="handleEditRule"
-      />
+          <div class="sidebar__tree">
+            <ProxyTree
+              :groups="groups"
+              :filter-text="filterText"
+              :active-item-id="activeItemId"
+              :favorites-ready="userPreferences.ready"
+              @node-click="handleNodeClick"
+              @edit-rule="handleEditRule"
+              @set-favorite="setFavorite"
+              @set-enabled="setRuleEnabled"
+            />
+          </div>
+        </el-collapse-item>
+      </el-collapse>
     </el-scrollbar>
   </div>
 </template>
@@ -122,6 +222,8 @@
 <style lang="scss" scoped>
   .sidebar {
     width: 300px;
+    flex: 0 0 300px;
+    min-height: 0;
     background: var(--el-bg-color);
     border-right: 1px solid var(--el-border-color);
     display: flex;
@@ -165,7 +267,6 @@
   }
 
   .sidebar__tree {
-    flex: 1;
     overflow: hidden;
     padding-right: 8px;
 
@@ -173,5 +274,50 @@
       width: 100%;
       display: flex;
     }
+  }
+
+  .sidebar__panels {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .sidebar__panels :deep(.el-collapse-item__header) {
+    padding-left: 8px;
+  }
+
+  .sidebar__panels :deep(.el-collapse-item__title) {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .sidebar__panels :deep(.el-collapse-item__content) {
+    padding-bottom: 8px;
+  }
+
+  .sidebar__panel-title {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .sidebar__count {
+    margin-left: 8px;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  .sidebar__mode {
+    margin-left: auto;
+    margin-right: 8px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .sidebar__notice {
+    margin: 0;
+    padding: 0 8px 8px;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
   }
 </style>

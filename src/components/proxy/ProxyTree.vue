@@ -5,15 +5,20 @@
   import { useProxyStore } from '../../stores/proxy'
   import type { ProxyGroup, ProxyNode, ProxyRule } from '../../types/proxy'
   import { isProxyRule, isProxyGroup } from '../../types/proxy'
+  import FavoriteButton from './FavoriteButton.vue'
 
   interface Props {
     groups: ProxyGroup[]
     filterText: string
+    activeItemId: string
+    favoritesReady: boolean
   }
 
   interface Emits {
     (e: 'node-click', data: ProxyNode): void
     (e: 'edit-rule', data: ProxyNode): void
+    (e: 'set-favorite', ruleId: string, favorite: boolean): void
+    (e: 'set-enabled', ruleId: string, enabled: boolean): void
   }
 
   const props = defineProps<Props>()
@@ -24,8 +29,17 @@
 
   // Tree 自己管理展开和选中状态
   const expandedKeys = ref<string[]>([])
-  const activeItemId = ref<string>('')
+  const currentItemId = ref<string>('')
   let uiStateSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+  watch(
+    () => props.activeItemId,
+    id => {
+      currentItemId.value = id
+      treeRef.value?.setCurrentKey(id)
+    },
+    { immediate: true }
+  )
 
   // el-tree 配置：直接使用 name 字段作为 label，children 字段作为子节点
   const treeProps = {
@@ -61,9 +75,10 @@
       clearTimeout(uiStateSaveTimer)
     }
     uiStateSaveTimer = setTimeout(() => {
-      proxyStore.uiState.expandedKeys = [...expandedKeys.value]
-      proxyStore.uiState.activeItemId = activeItemId.value
-      proxyStore.saveUIState()
+      proxyStore.saveUIState({
+        expandedKeys: [...expandedKeys.value],
+        activeItemId: currentItemId.value
+      })
     }, 300)
   }
 
@@ -89,9 +104,9 @@
 
     // 恢复选中状态
     if (proxyStore.uiState.activeItemId) {
-      activeItemId.value = proxyStore.uiState.activeItemId
+      currentItemId.value = props.activeItemId || proxyStore.uiState.activeItemId
       await nextTick()
-      treeRef.value?.setCurrentKey(activeItemId.value)
+      treeRef.value?.setCurrentKey(currentItemId.value)
     }
   })
 
@@ -100,9 +115,10 @@
     if (uiStateSaveTimer) {
       clearTimeout(uiStateSaveTimer)
     }
-    proxyStore.uiState.expandedKeys = [...expandedKeys.value]
-    proxyStore.uiState.activeItemId = activeItemId.value
-    proxyStore.saveUIState()
+    proxyStore.saveUIState({
+      expandedKeys: [...expandedKeys.value],
+      activeItemId: currentItemId.value
+    })
   })
 
   watch(
@@ -136,13 +152,13 @@
   )
 
   // 监听选中状态变化，保存
-  watch(activeItemId, () => {
+  watch(currentItemId, () => {
     saveUIState()
   })
 
   // 节点点击 - 更新选中状态并通知父组件
   const handleNodeClick = (data: ProxyNode) => {
-    activeItemId.value = data.id
+    currentItemId.value = data.id
     // :current-node-key 绑定会自动更新树的选中状态，不需要手动调用 setCurrentKey
     // 通知 Sidebar 更新内容区域状态
     emit('node-click', data)
@@ -160,13 +176,6 @@
     const index = expandedKeys.value.indexOf(data.id)
     if (index > -1) {
       expandedKeys.value.splice(index, 1)
-    }
-  }
-
-  // 复选框变更 - 直接处理
-  const handleCheckboxChange = (data: ProxyNode) => {
-    if (isProxyRule(data)) {
-      proxyStore.updateRule(data.groupId, data.id, { enabled: !data.enabled })
     }
   }
 
@@ -257,7 +266,7 @@
     :props="treeProps"
     node-key="id"
     :default-expanded-keys="expandedKeys"
-    :current-node-key="activeItemId"
+    :current-node-key="currentItemId"
     :expand-on-click-node="false"
     highlight-current
     :filter-node-method="filterNode"
@@ -269,8 +278,8 @@
         class="tree-node"
         :class="{
           'tree-node--active':
-            (data.type === 'group' && data.id === activeItemId) ||
-            (data.type === 'rule' && data.id === activeItemId)
+            (data.type === 'group' && data.id === currentItemId) ||
+            (data.type === 'rule' && data.id === currentItemId)
         }"
         @click.stop="handleNodeClick(data)"
       >
@@ -279,7 +288,8 @@
           <el-checkbox
             v-if="data.type === 'rule'"
             :model-value="data.enabled"
-            @change="handleCheckboxChange(data)"
+            :aria-label="`启用 ${data.name}`"
+            @change="value => emit('set-enabled', data.id, value === true)"
             @click.stop
             style="margin-right: 4px"
           />
@@ -309,6 +319,12 @@
 
           <!-- 叶子节点（代理规则）的操作 -->
           <template v-else-if="data.type === 'rule'">
+            <FavoriteButton
+              :favorite="data.favorite === true"
+              :name="data.name"
+              :disabled="!favoritesReady"
+              @change="value => emit('set-favorite', data.id, value)"
+            />
             <el-dropdown @command="command => handleRuleDropdownCommand(command, data)">
               <el-icon class="tree-node__action-icon tree-node__action-icon--add">
                 <i-ep-plus />
@@ -339,8 +355,15 @@
 
   .tree-node__content {
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
+  }
+
+  .tree-node__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .tree-node__actions {

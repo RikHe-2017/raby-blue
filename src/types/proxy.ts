@@ -5,6 +5,7 @@ export interface ProxyRule {
   id: string
   name: string
   enabled: boolean
+  favorite?: boolean // 未填写视为未收藏，兼容旧配置
   sourceUrl: string
   targetUrl: string
   groupId: string

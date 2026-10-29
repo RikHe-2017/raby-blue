@@ -1,9 +1,9 @@
 <script lang="ts" setup>
-  import { computed, defineAsyncComponent, nextTick, ref, onMounted, watch } from 'vue'
+  import { computed, defineAsyncComponent, nextTick, ref, onMounted } from 'vue'
   import { ElConfigProvider, ElMessage } from 'element-plus'
   import ProxyView from './components/proxy/ProxyView.vue'
   import ScriptView from './components/script/ScriptView.vue'
-  import { createStorageAdapter } from './stores/storage'
+  import { useUserPreferencesStore } from './stores/user-preferences'
   import { useProxyStore } from './stores/proxy'
   import { useScriptStore } from './stores/script'
 
@@ -11,8 +11,8 @@
     () => import('./components/config-transfer/ConfigTransferDialog.vue')
   )
 
-  const storage = createStorageAdapter()
-  const activeTab = ref<'proxy' | 'script'>('proxy')
+  const userPreferences = useUserPreferencesStore()
+  const activeTab = computed(() => userPreferences.preferences.activeTab)
   const proxyView = ref<InstanceType<typeof ProxyView>>()
   const scriptView = ref<InstanceType<typeof ScriptView>>()
   const transferVisible = ref(false)
@@ -37,32 +37,26 @@
     }
   }
 
-  // 加载保存的 tab 状态
-  onMounted(async () => {
-    const savedTab = await storage.get('activeTab')
-    if (savedTab === 'proxy' || savedTab === 'script') {
-      activeTab.value = savedTab
-    }
-  })
-
-  // 保存 tab 状态
-  watch(activeTab, async val => {
-    await storage.set('activeTab', val)
-  })
+  onMounted(() => userPreferences.load())
 
   const handleTabChange = (tab: string | number) => {
     if (tab === 'proxy' || tab === 'script') {
-      activeTab.value = tab
+      userPreferences.update({ activeTab: tab })
     }
   }
 </script>
 
 <template>
   <el-config-provider :size="'small'">
-    <div class="app">
+    <div v-if="userPreferences.ready" class="app">
       <!-- 标签页切换 -->
       <div class="app__tabs">
-        <el-tabs v-model="activeTab" class="app__navigation" @tab-change="handleTabChange" lazy>
+        <el-tabs
+          :model-value="activeTab"
+          class="app__navigation"
+          @tab-change="handleTabChange"
+          lazy
+        >
           <el-tab-pane label="代理配置" name="proxy">
             <template #label>
               <span class="app__tab-label">

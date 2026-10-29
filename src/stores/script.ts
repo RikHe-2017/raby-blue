@@ -3,11 +3,14 @@ import { ref, computed } from 'vue'
 import type { ScriptConfig, ScriptGroup, Script } from '../types/script'
 import { DEFAULT_SCRIPT_CONFIG, isScriptGroup, isScript } from '../types/script'
 import { createStorageAdapter } from './storage'
+import { useUserPreferencesStore } from './user-preferences'
+import type { TreeUIState } from './user-preferences-model'
 
 const storage = createStorageAdapter()
 
 export const useScriptStore = defineStore('script', () => {
   const config = ref<ScriptConfig>(DEFAULT_SCRIPT_CONFIG)
+  const userPreferences = useUserPreferencesStore()
 
   const enabled = computed(() => config.value.enabled)
   const groups = computed(() => config.value.groups)
@@ -92,7 +95,9 @@ export const useScriptStore = defineStore('script', () => {
   const updateScript = (groupId: string, scriptId: string, updatedScript: Partial<Script>) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
-      const script = group.children.find((node): node is Script => isScript(node) && node.id === scriptId)
+      const script = group.children.find(
+        (node): node is Script => isScript(node) && node.id === scriptId
+      )
       if (script) {
         Object.assign(script, updatedScript, {
           updatedAt: new Date().toISOString()
@@ -121,47 +126,12 @@ export const useScriptStore = defineStore('script', () => {
     }
   }
 
-  // UI状态：展开的节点ID列表和选中的节点ID
-  const uiState = ref<{
-    expandedKeys: string[]
-    activeGroupId: string
-    activeItemId: string
-  }>({
-    expandedKeys: [],
-    activeGroupId: '',
-    activeItemId: ''
-  })
+  const uiState = computed(() => userPreferences.preferences.scriptUIState)
 
-  const saveUIState = async () => {
-    // 确保 expandedKeys 是数组格式
-    const stateToSave = {
-      ...uiState.value,
-      expandedKeys: Array.isArray(uiState.value.expandedKeys) ? uiState.value.expandedKeys : []
-    }
-    await storage.set('scriptUIState', stateToSave)
-  }
+  const saveUIState = (patch: Partial<TreeUIState>) =>
+    userPreferences.update({ scriptUIState: patch })
 
-  const loadUIState = async () => {
-    const result = await storage.get('scriptUIState')
-    if (result) {
-      // 确保 expandedKeys 是数组格式（Chrome storage 可能将数组转换为对象）
-      if (result.expandedKeys) {
-        if (Array.isArray(result.expandedKeys)) {
-          uiState.value = result
-        } else if (typeof result.expandedKeys === 'object') {
-          // 如果是对象，转换为数组
-          uiState.value = {
-            ...result,
-            expandedKeys: Object.values(result.expandedKeys)
-          }
-        } else {
-          uiState.value = result
-        }
-      } else {
-        uiState.value = result
-      }
-    }
-  }
+  const loadUIState = () => userPreferences.load()
 
   return {
     config,

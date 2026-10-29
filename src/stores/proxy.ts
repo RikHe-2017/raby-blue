@@ -3,11 +3,16 @@ import { ref, computed } from 'vue'
 import type { ProxyConfig, ProxyGroup, ProxyRule } from '../types/proxy'
 import { DEFAULT_PROXY_CONFIG, isProxyGroup, isProxyRule } from '../types/proxy'
 import { createStorageAdapter } from './storage'
+import { updateProxyRule } from './proxy-rules'
+import type { ProxyRuleChanges } from './proxy-rules'
+import { useUserPreferencesStore } from './user-preferences'
+import type { TreeUIState } from './user-preferences-model'
 
 const storage = createStorageAdapter()
 
 export const useProxyStore = defineStore('proxy', () => {
   const config = ref<ProxyConfig>(DEFAULT_PROXY_CONFIG)
+  const userPreferences = useUserPreferencesStore()
 
   const enabled = computed(() => config.value.enabled)
   const groups = computed(() => config.value.groups)
@@ -89,18 +94,11 @@ export const useProxyStore = defineStore('proxy', () => {
     }
   }
 
-  const updateRule = (groupId: string, ruleId: string, updatedRule: Partial<ProxyRule>) => {
-    const group = findGroupById(config.value.groups, groupId)
-    if (group) {
-      const index = group.children.findIndex(node => isProxyRule(node) && node.id === ruleId)
-      if (index !== -1 && isProxyRule(group.children[index])) {
-        group.children[index] = {
-          ...group.children[index],
-          ...updatedRule
-        } as ProxyRule
-        saveConfig()
-      }
-    }
+  const updateRule = (ruleId: string, changes: ProxyRuleChanges) => {
+    const groups = updateProxyRule(config.value.groups, ruleId, changes)
+    if (groups === config.value.groups) return
+    config.value = { ...config.value, groups }
+    saveConfig()
   }
 
   const deleteRule = (groupId: string, ruleId: string) => {
@@ -122,47 +120,12 @@ export const useProxyStore = defineStore('proxy', () => {
     }
   }
 
-  // UI状态：展开的节点ID列表和选中的节点ID
-  const uiState = ref<{
-    expandedKeys: string[]
-    activeGroupId: string
-    activeItemId: string
-  }>({
-    expandedKeys: [],
-    activeGroupId: '',
-    activeItemId: ''
-  })
+  const uiState = computed(() => userPreferences.preferences.proxyUIState)
 
-  const saveUIState = async () => {
-    // 确保 expandedKeys 是数组格式
-    const stateToSave = {
-      ...uiState.value,
-      expandedKeys: Array.isArray(uiState.value.expandedKeys) ? uiState.value.expandedKeys : []
-    }
-    await storage.set('proxyUIState', stateToSave)
-  }
+  const saveUIState = (patch: Partial<TreeUIState>) =>
+    userPreferences.update({ proxyUIState: patch })
 
-  const loadUIState = async () => {
-    const result = await storage.get('proxyUIState')
-    if (result) {
-      // 确保 expandedKeys 是数组格式（Chrome storage 可能将数组转换为对象）
-      if (result.expandedKeys) {
-        if (Array.isArray(result.expandedKeys)) {
-          uiState.value = result
-        } else if (typeof result.expandedKeys === 'object') {
-          // 如果是对象，转换为数组
-          uiState.value = {
-            ...result,
-            expandedKeys: Object.values(result.expandedKeys)
-          }
-        } else {
-          uiState.value = result
-        }
-      } else {
-        uiState.value = result
-      }
-    }
-  }
+  const loadUIState = () => userPreferences.load()
 
   return {
     config,

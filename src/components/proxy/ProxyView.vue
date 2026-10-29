@@ -8,6 +8,7 @@
   import { isProxyGroup, isProxyRule } from '../../types/proxy'
 
   const proxyStore = useProxyStore()
+  const configLoaded = ref(false)
   const proxyEnabled = ref(false)
   // 内容区域的状态（不需要持久化）
   const activeGroupId = ref<string>('')
@@ -134,6 +135,7 @@
     } else {
       setDefaultActiveItem()
     }
+    configLoaded.value = true
   })
 
   onUnmounted(() => {
@@ -188,9 +190,7 @@
 
   // 监听内容区域状态变化，保存到 store（用于内容区域恢复）
   watch([activeGroupId, activeItemId], () => {
-    proxyStore.uiState.activeGroupId = activeGroupId.value
-    proxyStore.uiState.activeItemId = activeItemId.value
-    proxyStore.saveUIState()
+    proxyStore.saveUIState({ activeGroupId: activeGroupId.value, activeItemId: activeItemId.value })
   })
 
   const handleEditRule = (ruleData: ProxyNode) => {
@@ -229,7 +229,7 @@
       proxyStore.updateGroup(activeGroupId.value, { name: activeItemName.value.trim() })
       isNameSaved.value = true
     } else if (activeRule.value && activeItemName.value.trim()) {
-      proxyStore.updateRule(activeGroupId.value, activeRule.value.id, {
+      proxyStore.updateRule(activeRule.value.id, {
         name: activeItemName.value.trim()
       })
       isNameSaved.value = true
@@ -268,7 +268,7 @@
     }
     isConfigSaved.value = false
     pendingConfigSave = () => {
-      proxyStore.updateRule(groupId, ruleId, addresses)
+      proxyStore.updateRule(ruleId, addresses)
       if (activeGroupId.value === groupId && activeRule.value?.id === ruleId) {
         isConfigSaved.value = true
       }
@@ -297,8 +297,10 @@
   <div class="proxy-view">
     <!-- 左侧分组列表 -->
     <Sidebar
+      v-if="configLoaded"
       :groups="groups"
       :active-group-id="activeGroupId"
+      :active-item-id="activeItemId"
       @update:active-group-id="val => (activeGroupId = val)"
       @update:active-item-id="val => (activeItemId = val)"
       @edit-rule="handleEditRule"

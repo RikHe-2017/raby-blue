@@ -7,6 +7,7 @@
   import { isScriptGroup, isScript } from '../../types/script'
 
   const scriptStore = useScriptStore()
+  const configLoaded = ref(false)
   // 内容区域的状态（不需要持久化）
   const activeGroupId = ref<string>('')
   const activeItemId = ref<string>('')
@@ -91,6 +92,7 @@
     } else {
       setDefaultActiveItem()
     }
+    configLoaded.value = true
   })
 
   onUnmounted(() => {
@@ -136,9 +138,10 @@
 
   // 监听内容区域状态变化，保存到 store（用于内容区域恢复）
   watch([activeGroupId, activeItemId], () => {
-    scriptStore.uiState.activeGroupId = activeGroupId.value
-    scriptStore.uiState.activeItemId = activeItemId.value
-    scriptStore.saveUIState()
+    scriptStore.saveUIState({
+      activeGroupId: activeGroupId.value,
+      activeItemId: activeItemId.value
+    })
   })
 
   const handleEditScript = (scriptData: ScriptNode) => {
@@ -288,6 +291,7 @@
   <div class="script-view">
     <!-- 左侧脚本列表 -->
     <ScriptSidebar
+      v-if="configLoaded"
       :groups="groups"
       :active-group-id="activeGroupId"
       @update:active-group-id="val => (activeGroupId = val)"

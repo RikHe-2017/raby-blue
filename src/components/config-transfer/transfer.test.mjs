@@ -15,6 +15,48 @@ const proxy = (children = []) => ({
   enabled: true,
   groups: [{ id: 'g', name: '环境', enabled: true, type: 'group', children }]
 })
+
+test('收藏字段随源代理导出、覆盖和增量导入，旧文件未填写时仍兼容', () => {
+  const local = proxy([{ ...rule('r', '代理', 'g'), favorite: true }])
+  const incoming = proxy([
+    { ...rule('remote', '代理', 'g'), favorite: false },
+    { ...rule('new', '新增', 'g'), favorite: true }
+  ])
+  const backup = createBackup('proxy', incoming, { enabled: false, groups: [] }, 'now')
+  assert.equal(parseBackup(JSON.stringify(backup)).proxyConfig.groups[0].children[1].favorite, true)
+  assert.equal(
+    applyBackup(
+      { proxyConfig: local, scriptConfig: { enabled: false, groups: [] } },
+      backup,
+      'replace'
+    ).proxyConfig.groups[0].children[0].favorite,
+    false
+  )
+  const merged = applyBackup(
+    { proxyConfig: local, scriptConfig: { enabled: false, groups: [] } },
+    backup,
+    'merge'
+  )
+  assert.deepEqual(
+    merged.proxyConfig.groups[0].children.map(node => node.favorite),
+    [true, true]
+  )
+  assert.doesNotThrow(() =>
+    parseBackup(
+      JSON.stringify({ version: '1.0.0', proxyConfig: proxy([rule('old', '旧配置', 'g')]) })
+    )
+  )
+  assert.throws(
+    () =>
+      parseBackup(
+        JSON.stringify({
+          version: '1.0.0',
+          proxyConfig: proxy([{ ...rule('bad', '错误字段', 'g'), favorite: 'true' }])
+        })
+      ),
+    /favorite/
+  )
+})
 const scripts = {
   enabled: false,
   groups: [

@@ -61,9 +61,10 @@
       clearTimeout(uiStateSaveTimer)
     }
     uiStateSaveTimer = setTimeout(() => {
-      scriptStore.uiState.expandedKeys = [...expandedKeys.value]
-      scriptStore.uiState.activeItemId = activeItemId.value
-      scriptStore.saveUIState()
+      scriptStore.saveUIState({
+        expandedKeys: [...expandedKeys.value],
+        activeItemId: activeItemId.value
+      })
     }, 300)
   }
 
@@ -100,9 +101,10 @@
     if (uiStateSaveTimer) {
       clearTimeout(uiStateSaveTimer)
     }
-    scriptStore.uiState.expandedKeys = [...expandedKeys.value]
-    scriptStore.uiState.activeItemId = activeItemId.value
-    scriptStore.saveUIState()
+    scriptStore.saveUIState({
+      expandedKeys: [...expandedKeys.value],
+      activeItemId: activeItemId.value
+    })
   })
 
   watch(
