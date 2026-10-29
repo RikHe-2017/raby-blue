@@ -10,3 +10,7 @@
 :root .el-collapse {
   --el-collapse-header-height: 40px;
 }
+
+:root .el-collapse-item__content {
+  line-height: 1;
+}

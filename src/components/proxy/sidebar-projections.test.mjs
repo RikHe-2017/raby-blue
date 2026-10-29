@@ -3,7 +3,8 @@ import test from 'node:test'
 import {
   collectProxyEntries,
   filterProxyGroups,
-  filterProxyEntries
+  filterProxyEntries,
+  indexProxyNodes
 } from './sidebar-projections.ts'
 import { normalizeSidebarPreferences } from '../../stores/user-preferences-model.ts'
 
@@ -135,4 +136,12 @@ test('快捷面板搜索匹配代理名称或完整路径，忽略大小写和�
   assert.deepEqual(filterProxyEntries(entries, '不存在'), [])
   assert.equal(filterProxyEntries(entries, '   '), entries)
   assert.deepEqual(entries, before)
+})
+
+test('共用原树时通过节点 ID 找到完整分组，避免筛选视图缩小分组操作范围', () => {
+  const projected = filterProxyGroups(groups, ['a'])
+  const originals = indexProxyNodes(groups)
+  assert.equal(projected[0].children[0].children.length, 1)
+  assert.equal(originals.get('dev').children.length, 2)
+  assert.equal(originals.get('a'), groups[0].children[0].children[0])
 })

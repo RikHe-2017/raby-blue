@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import type { ProxyConfig, ProxyGroup, ProxyRule } from '../types/proxy'
 import { DEFAULT_PROXY_CONFIG, isProxyGroup, isProxyRule } from '../types/proxy'
 import { createStorageAdapter } from './storage'
-import { updateProxyRule } from './proxy-rules'
+import { setProxyNodeFavorite, updateProxyRule } from './proxy-rules'
 import type { ProxyRuleChanges } from './proxy-rules'
 import { useUserPreferencesStore } from './user-preferences'
 import type { TreeUIState } from './user-preferences-model'
@@ -101,6 +101,21 @@ export const useProxyStore = defineStore('proxy', () => {
     saveConfig()
   }
 
+  const setFavorite = async (nodeId: string, favorite: boolean) => {
+    const groups = setProxyNodeFavorite(config.value.groups, nodeId, favorite)
+    if (groups === config.value.groups) return false
+    const previous = config.value
+    config.value = { ...config.value, groups }
+    const applied = config.value
+    try {
+      await saveConfig()
+      return true
+    } catch (error) {
+      if (config.value === applied) config.value = previous
+      throw error
+    }
+  }
+
   const deleteRule = (groupId: string, ruleId: string) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
@@ -138,6 +153,7 @@ export const useProxyStore = defineStore('proxy', () => {
     deleteGroup,
     addRule,
     updateRule,
+    setFavorite,
     deleteRule,
     saveConfig,
     loadConfig,

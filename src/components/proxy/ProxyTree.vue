@@ -1,17 +1,19 @@
 <script lang="ts" setup>
-  import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
-  import { ElMessage } from 'element-plus'
+  import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
   import type { TreeInstance } from 'element-plus'
   import { useProxyStore } from '../../stores/proxy'
-  import type { ProxyGroup, ProxyNode, ProxyRule } from '../../types/proxy'
-  import { isProxyRule, isProxyGroup } from '../../types/proxy'
-  import FavoriteButton from './FavoriteButton.vue'
+  import type { ProxyGroup, ProxyNode } from '../../types/proxy'
+  import { isProxyGroup } from '../../types/proxy'
+  import { indexProxyNodes } from './sidebar-projections'
+  import ProxyNodeContent from './ProxyNodeContent.vue'
+  import { useProxyNodeActions } from './use-proxy-node-actions'
 
   interface Props {
     groups: ProxyGroup[]
     filterText: string
     activeItemId: string
     favoritesReady: boolean
+    persistState?: boolean
   }
 
   interface Emits {
@@ -21,12 +23,14 @@
     (e: 'set-enabled', ruleId: string, enabled: boolean): void
   }
 
-  const props = defineProps<Props>()
+  const props = withDefaults(defineProps<Props>(), {
+    persistState: true
+  })
   const emit = defineEmits<Emits>()
 
   const proxyStore = useProxyStore()
   const treeRef = ref<TreeInstance>()
-
+  const sourceNodes = computed(() => indexProxyNodes(proxyStore.groups))
   // Tree 自己管理展开和选中状态
   const expandedKeys = ref<string[]>([])
   const currentItemId = ref<string>('')
@@ -71,6 +75,7 @@
 
   // 保存 UI 状态（防抖）
   const saveUIState = () => {
+    if (!props.persistState) return
     if (uiStateSaveTimer) {
       clearTimeout(uiStateSaveTimer)
     }
@@ -84,6 +89,10 @@
 
   // 初始化：加载保存的 UI 状态
   onMounted(async () => {
+    if (!props.persistState) {
+      expandedKeys.value = collectAllGroupIds(props.groups)
+      return
+    }
     await proxyStore.loadUIState()
     await nextTick()
 
@@ -115,10 +124,11 @@
     if (uiStateSaveTimer) {
       clearTimeout(uiStateSaveTimer)
     }
-    proxyStore.saveUIState({
-      expandedKeys: [...expandedKeys.value],
-      activeItemId: currentItemId.value
-    })
+    if (props.persistState)
+      proxyStore.saveUIState({
+        expandedKeys: [...expandedKeys.value],
+        activeItemId: currentItemId.value
+      })
   })
 
   watch(
@@ -179,90 +189,14 @@
     }
   }
 
-  // 添加分组 - 直接处理
-  const handleAddGroup = (parentId?: string) => {
-    const newGroup: ProxyGroup = {
-      id: crypto.randomUUID(),
-      name: '新分类',
-      enabled: false,
-      type: 'group',
-      children: []
-    }
-    proxyStore.addGroup(newGroup, parentId)
-  }
-
-  // 添加代理规则 - 直接处理
-  const handleAddProxy = (parentId: string) => {
-    const newRule: ProxyRule = {
-      id: crypto.randomUUID(),
-      name: '新代理',
-      sourceUrl: '',
-      targetUrl: '',
-      enabled: false,
-      groupId: parentId,
-      type: 'rule'
-    }
-    proxyStore.addRule(parentId, newRule)
-  }
-
-  // 分组下拉菜单命令处理
-  const handleDropdownCommand = (command: string, parentData: ProxyNode) => {
-    if (command === 'category') {
-      handleAddGroup(parentData.id)
-    } else if (command === 'proxy') {
-      handleAddProxy(parentData.id)
-    }
-  }
-
-  // 复制规则 - 直接处理
-  const handleDuplicateRule = (ruleData: ProxyNode) => {
-    if (!isProxyRule(ruleData)) return
-    const duplicatedRule: ProxyRule = {
-      id: crypto.randomUUID(),
-      name: `${ruleData.name} - 副本`,
-      sourceUrl: ruleData.sourceUrl || '',
-      targetUrl: ruleData.targetUrl || '',
-      enabled: false,
-      groupId: ruleData.groupId,
-      type: 'rule'
-    }
-    proxyStore.addRule(ruleData.groupId, duplicatedRule)
-  }
-
-  // 编辑规则 - 需要通知父组件切换到编辑模式
-  const handleEditRule = (ruleData: ProxyNode) => {
-    emit('edit-rule', ruleData)
-  }
-
-  // 删除规则 - 直接处理
-  const handleDeleteRule = (ruleData: ProxyNode) => {
-    if (!isProxyRule(ruleData)) return
-    proxyStore.deleteRule(ruleData.groupId, ruleData.id)
-    ElMessage.success('代理规则已删除')
-  }
-
-  // 规则下拉菜单命令处理
-  const handleRuleDropdownCommand = (command: string, ruleData: ProxyNode) => {
-    if (command === 'duplicate') {
-      handleDuplicateRule(ruleData)
-    } else if (command === 'edit') {
-      handleEditRule(ruleData)
-    } else if (command === 'delete') {
-      handleDeleteRule(ruleData)
-    }
-  }
-
-  // 删除分组 - 直接处理
-  const handleDeleteGroup = (groupId: string) => {
-    proxyStore.deleteGroup(groupId)
-    ElMessage.success('分组已删除')
-  }
+  const { handleNodeCommand } = useProxyNodeActions(emit)
 </script>
 
 <template>
   <el-tree
     ref="treeRef"
     :data="groups"
+    :default-expand-all="!persistState"
     :props="treeProps"
     node-key="id"
     :default-expanded-keys="expandedKeys"
@@ -273,122 +207,15 @@
     @node-expand="handleNodeExpand"
     @node-collapse="handleNodeCollapse"
   >
-    <template #default="{ node, data }">
-      <div
-        class="tree-node"
-        :class="{
-          'tree-node--active':
-            (data.type === 'group' && data.id === currentItemId) ||
-            (data.type === 'rule' && data.id === currentItemId)
-        }"
-        @click.stop="handleNodeClick(data)"
-      >
-        <div class="tree-node__content">
-          <!-- 只在代理规则显示复选框 -->
-          <el-checkbox
-            v-if="data.type === 'rule'"
-            :model-value="data.enabled"
-            :aria-label="`启用 ${data.name}`"
-            @change="value => emit('set-enabled', data.id, value === true)"
-            @click.stop
-            style="margin-right: 4px"
-          />
-          <span class="tree-node__label">{{ node.label }}</span>
-        </div>
-        <div class="tree-node__actions">
-          <!-- 分组节点的操作 -->
-          <template v-if="data.type === 'group'">
-            <el-dropdown @command="command => handleDropdownCommand(command, data)">
-              <el-icon class="tree-node__action-icon tree-node__action-icon--add">
-                <i-ep-plus />
-              </el-icon>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="category"> 创建分类 </el-dropdown-item>
-                  <el-dropdown-item command="proxy"> 创建代理 </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-icon
-              class="tree-node__action-icon tree-node__action-icon--delete"
-              @click.stop="handleDeleteGroup(data.id)"
-            >
-              <i-ep-delete />
-            </el-icon>
-          </template>
-
-          <!-- 叶子节点（代理规则）的操作 -->
-          <template v-else-if="data.type === 'rule'">
-            <FavoriteButton
-              :favorite="data.favorite === true"
-              :name="data.name"
-              :disabled="!favoritesReady"
-              @change="value => emit('set-favorite', data.id, value)"
-            />
-            <el-dropdown @command="command => handleRuleDropdownCommand(command, data)">
-              <el-icon class="tree-node__action-icon tree-node__action-icon--add">
-                <i-ep-plus />
-              </el-icon>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="duplicate"> 复制代理 </el-dropdown-item>
-                  <el-dropdown-item command="edit"> 编辑代理 </el-dropdown-item>
-                  <el-dropdown-item command="delete" divided> 删除代理 </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </template>
-        </div>
-      </div>
+    <template #default="{ data }">
+      <ProxyNodeContent
+        :data="sourceNodes.get(data.id) || data"
+        :active-item-id="currentItemId"
+        :favorites-ready="favoritesReady"
+        @node-click="handleNodeClick"
+        @set-enabled="(id, enabled) => emit('set-enabled', id, enabled)"
+        @command="handleNodeCommand"
+      />
     </template>
   </el-tree>
 </template>
-
-<style lang="scss" scoped>
-  .tree-node {
-    width: 100%;
-    padding: 0 4px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .tree-node__content {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-  }
-
-  .tree-node__label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .tree-node__actions {
-    flex-shrink: 0;
-    display: flex;
-    gap: 4px;
-  }
-
-  .tree-node__action-icon {
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-    border-radius: var(--el-border-radius-small);
-    transition: all 0.2s;
-
-    &:hover {
-      background-color: var(--el-fill-color-light);
-    }
-  }
-
-  .tree-node__action-icon--add {
-    color: var(--el-color-primary);
-  }
-
-  .tree-node__action-icon--delete {
-    color: var(--el-color-danger);
-  }
-</style>

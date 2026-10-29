@@ -26,3 +26,38 @@ export function updateProxyRule(
   const next = groups.map(group => updateNode(group) as ProxyGroup)
   return next.some((group, index) => group !== groups[index]) ? next : groups
 }
+
+export function getProxyFavoriteSummary(node: ProxyNode): {
+  ruleCount: number
+  favoriteCount: number
+} {
+  if (node.type === 'rule') return { ruleCount: 1, favoriteCount: node.favorite === true ? 1 : 0 }
+  return node.children.reduce(
+    (total, child) => {
+      const summary = getProxyFavoriteSummary(child)
+      return {
+        ruleCount: total.ruleCount + summary.ruleCount,
+        favoriteCount: total.favoriteCount + summary.favoriteCount
+      }
+    },
+    { ruleCount: 0, favoriteCount: 0 }
+  )
+}
+
+export function setProxyNodeFavorite(
+  groups: ProxyGroup[],
+  nodeId: string,
+  favorite: boolean
+): ProxyGroup[] {
+  const update = (node: ProxyNode, selected: boolean): ProxyNode => {
+    const included = selected || node.id === nodeId
+    if (node.type === 'rule')
+      return included && node.favorite !== favorite ? { ...node, favorite } : node
+    const children = node.children.map(child => update(child, included))
+    return children.some((child, index) => child !== node.children[index])
+      ? { ...node, children }
+      : node
+  }
+  const next = groups.map(group => update(group, false) as ProxyGroup)
+  return next.some((group, index) => group !== groups[index]) ? next : groups
+}

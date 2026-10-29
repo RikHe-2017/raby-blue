@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { computed, ref } from 'vue'
+  import { ElMessage } from 'element-plus'
   import ProxyTree from './ProxyTree.vue'
   import ProxyQuickPanel from './ProxyQuickPanel.vue'
   import { collectProxyEntries } from './sidebar-projections'
@@ -59,8 +60,14 @@
     proxyStore.updateRule(ruleId, { enabled })
   }
 
-  const setFavorite = (ruleId: string, favorite: boolean) => {
-    proxyStore.updateRule(ruleId, { favorite })
+  const setFavorite = async (nodeId: string, favorite: boolean) => {
+    try {
+      if (await proxyStore.setFavorite(nodeId, favorite)) {
+        ElMessage.success(favorite ? '加入收藏成功' : '取消收藏成功')
+      }
+    } catch {
+      ElMessage.error('收藏保存失败，请重试')
+    }
   }
 
   // Header 下拉菜单：创建顶级分组或代理
@@ -178,6 +185,7 @@
             :favorites-ready="userPreferences.ready"
             :empty-text="panel.emptyText"
             @select="handleNodeClick"
+            @edit-rule="handleEditRule"
             @set-enabled="setRuleEnabled"
             @set-favorite="setFavorite"
           />

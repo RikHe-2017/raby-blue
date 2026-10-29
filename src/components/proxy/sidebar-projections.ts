@@ -35,3 +35,13 @@ export function filterProxyGroups(groups: ProxyGroup[], ruleIds: string[]): Prox
   }
   return groups.flatMap(prune)
 }
+
+export function indexProxyNodes(groups: ProxyGroup[]): Map<string, ProxyNode> {
+  const nodes = new Map<string, ProxyNode>()
+  const visit = (node: ProxyNode) => {
+    nodes.set(node.id, node)
+    if (node.type === 'group') node.children.forEach(visit)
+  }
+  groups.forEach(visit)
+  return nodes
+}

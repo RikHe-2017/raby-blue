@@ -41,3 +41,22 @@ The original stale-checkbox symptom was not reproduced in the isolated pre-chang
 - [x] Commit replacement imports and relevant tree-state resets together; retain other UI preferences and surface save failures.
 - [x] Mount sidebars after configuration/editor restoration so tree initialization uses actual business data.
 - [x] Verify pure defaults/merging, all existing tests, type-check/build and Chrome extension preference restoration. Legacy keys are ignored, not deleted or imported.
+
+## Configuration Tree Menus And Recursive Favorites
+
+- [x] Replace the configuration tree's separate right-side buttons with one Element Plus dropdown per node. Groups retain create-category/create-proxy/delete-group; rules retain duplicate/edit/delete. Checkbox enablement remains unchanged.
+- [x] Add group favorite actions that recursively update descendant source-rule favorite flags. Unfavorite uses the same recursive scope; sibling branches and enablement remain unchanged. Group menu state is derived from descendant rules, including partial favorites and empty groups.
+- [x] Verify exact per-node menus and original commands in Chrome, nested bulk favorites/unfavorites, reload/export persistence, input immutability and no-op behavior. No changes to script-tree actions or quick-panel permissions.
+
+## Reuse The Existing Configuration Tree
+
+- [x] Keep the existing ProxyTree template and its nine command handlers. ProxyQuickPanel now only filters/searches and directly renders ProxyTree; remove its separate tree and list implementations.
+- [x] Keep an opt-out for preference persistence so quick views do not overwrite the configuration tree's saved expansion state. The subsequent native-list request removes flat rendering from ProxyTree.
+- [x] Resolve favorite summaries against original node IDs so a filtered group still operates on the complete source branch. All panels use the existing menus and readonly favorite indicators.
+- [x] Verify all panels in compact/categorized modes, original commands, cross-panel synchronization, independent searches, reload, preference isolation and save failures in Chrome. Twenty-three unit tests, targeted lint and production build pass.
+
+## Native Compact Lists
+
+- [x] Both compact panels use one ProxyList with native ul/li and v-for; compact mode must not create ElTree. Categorized mode continues to use the existing ProxyTree.
+- [x] Extract the existing node markup/styles into ProxyNodeContent and the nine existing action handlers into use-proxy-node-actions without changing their bodies. Both renderers share those implementations.
+- [x] Preserve full paths, source-driven checkboxes, readonly favorite indicators, identical menus, search independence, active editing and preference restoration. Verify native-list DOM, both display modes and original operations in Chrome.
