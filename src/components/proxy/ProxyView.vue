@@ -12,12 +12,14 @@
   // 内容区域的状态（不需要持久化）
   const activeGroupId = ref<string>('')
   const activeItemId = ref<string>('')
-  const jsonConfig = ref('')
+  const sourceUrl = ref('')
+  const targetUrl = ref('')
   const activeItemName = ref('')
   const isNameSaved = ref(false)
   const isConfigSaved = ref(false)
   let nameSaveTimer: ReturnType<typeof setTimeout> | null = null
   let configSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingConfigSave: (() => void) | null = null
 
   const groups = computed(() => proxyStore.groups || [])
 
@@ -92,9 +94,15 @@
     }
   }
 
-  // 默认JSON配置示例
-  const defaultJsonConfig = {
-    proxy: ['*.example.com/static/jquery.js', 'localhost/static/jquery.js']
+  const savePendingConfig = () => {
+    if (configSaveTimer) {
+      clearTimeout(configSaveTimer)
+      configSaveTimer = null
+    }
+
+    const save = pendingConfigSave
+    pendingConfigSave = null
+    save?.()
   }
 
   onMounted(async () => {
@@ -133,9 +141,7 @@
     if (nameSaveTimer) {
       clearTimeout(nameSaveTimer)
     }
-    if (configSaveTimer) {
-      clearTimeout(configSaveTimer)
-    }
+    savePendingConfig()
   })
 
   watch(
@@ -149,29 +155,26 @@
   watch(
     [activeGroup, activeRule],
     ([group, rule]) => {
+      savePendingConfig()
+
       if (isActiveGroup.value && group) {
         // 当前选中的是分组
         activeItemName.value = group.name
-        jsonConfig.value = ''
+        sourceUrl.value = ''
+        targetUrl.value = ''
         isNameSaved.value = true
         isConfigSaved.value = true
       } else if (rule) {
         // 当前选中的是代理规则
         activeItemName.value = rule.name
-        // 如果代理规则有配置，使用实际配置，否则使用默认示例
-        if (rule.sourceUrl && rule.targetUrl) {
-          const config = {
-            proxy: [rule.sourceUrl, rule.targetUrl]
-          }
-          jsonConfig.value = JSON.stringify(config, null, 2)
-        } else {
-          jsonConfig.value = JSON.stringify(defaultJsonConfig, null, 2)
-        }
+        sourceUrl.value = rule.sourceUrl
+        targetUrl.value = rule.targetUrl
         isNameSaved.value = true
         isConfigSaved.value = true
       } else {
         activeItemName.value = ''
-        jsonConfig.value = JSON.stringify(defaultJsonConfig, null, 2)
+        sourceUrl.value = ''
+        targetUrl.value = ''
         isNameSaved.value = false
         isConfigSaved.value = false
       }
@@ -210,7 +213,6 @@
         // 规则被删除了，清空选中状态
         activeItemId.value = ''
         activeItemName.value = ''
-        jsonConfig.value = JSON.stringify(defaultJsonConfig, null, 2)
       }
       // 检查当前选中的分组是否还存在
       if (activeGroup.value === null && activeGroupId.value) {
@@ -251,69 +253,28 @@
     }, 500)
   })
 
-  const handleJsonInput = (value: string) => {
-    const config = JSON.parse(value)
-    // 这里可以添加JSON验证逻辑
-    console.log('JSON配置已更新:', config)
-  }
-
-  const saveJsonConfig = () => {
-    try {
-      const config = JSON.parse(jsonConfig.value)
-
-      // 验证配置格式
-      if (!config.proxy || !Array.isArray(config.proxy)) {
-        throw new Error('配置格式错误：缺少 proxy 数组')
-      }
-
-      // 只处理代理规则，不处理分组
-      if (activeRule.value) {
-        // 解析代理规则
-        const proxyRules = config.proxy
-
-        // 解析 "源地址 -> 目标地址" 格式
-        if (Array.isArray(proxyRules) && proxyRules.length === 2) {
-          const [sourceUrl, targetUrl] = proxyRules
-
-          // 更新代理规则
-          proxyStore.updateRule(activeGroupId.value, activeRule.value.id, {
-            sourceUrl: sourceUrl.trim(),
-            targetUrl: targetUrl.trim()
-          })
-
-          isConfigSaved.value = true
-        } else {
-          throw new Error('代理规则格式错误：应为 ["源地址", "目标地址"] 格式')
-        }
-      } else {
-        throw new Error('请先选择一个代理规则')
-      }
-    } catch (e) {
-      console.error('保存配置失败:', e)
-      isConfigSaved.value = false
-    }
-  }
-
-  // 监听JSON配置变化，实时保存
-  watch(jsonConfig, () => {
+  const updateProxyAddress = (field: 'sourceUrl' | 'targetUrl', value: string) => {
     if (!activeRule.value) return
 
-    isConfigSaved.value = false
+    if (field === 'sourceUrl') sourceUrl.value = value
+    else targetUrl.value = value
 
-    // 清除之前的定时器
-    if (configSaveTimer) {
-      clearTimeout(configSaveTimer)
+    const groupId = activeGroupId.value
+    const ruleId = activeRule.value.id
+    const addresses = {
+      sourceUrl: sourceUrl.value.trim(),
+      targetUrl: targetUrl.value.trim()
+    }
+    isConfigSaved.value = false
+    pendingConfigSave = () => {
+      proxyStore.updateRule(groupId, ruleId, addresses)
+      if (activeGroupId.value === groupId && activeRule.value?.id === ruleId) {
+        isConfigSaved.value = true
+      }
     }
 
-    // 防抖保存，800ms后保存（JSON解析需要更多时间）
-    configSaveTimer = setTimeout(() => {
-      saveJsonConfig()
-    }, 800)
-  })
-
-  const formatJson = () => {
-    const config = JSON.parse(jsonConfig.value)
-    jsonConfig.value = JSON.stringify(config, null, 2)
+    if (configSaveTimer) clearTimeout(configSaveTimer)
+    configSaveTimer = setTimeout(savePendingConfig, 500)
   }
 </script>
 
@@ -338,13 +299,13 @@
           :is-active-group="isActiveGroup"
           :active-rule="activeRule"
           :active-item-name="activeItemName"
-          :json-config="jsonConfig"
+          :source-url="sourceUrl"
+          :target-url="targetUrl"
           :is-name-saved="isNameSaved"
           :is-config-saved="isConfigSaved"
           @update:active-item-name="val => (activeItemName = val)"
-          @update:json-config="val => (jsonConfig = val)"
-          @json-input="handleJsonInput"
-          @format-json="formatJson"
+          @update:source-url="val => updateProxyAddress('sourceUrl', val)"
+          @update:target-url="val => updateProxyAddress('targetUrl', val)"
         />
       </div>
     </div>

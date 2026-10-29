@@ -2,16 +2,11 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
-import { createRequire } from 'module'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import Icons from 'unplugin-icons/vite'
 import IconsResolver from 'unplugin-icons/resolver'
-
-const require = createRequire(import.meta.url)
-const monacoEditorPluginModule = require('vite-plugin-monaco-editor')
-const monacoEditorPlugin = monacoEditorPluginModule.default || monacoEditorPluginModule
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -22,9 +17,6 @@ const pathSrc = resolve(__dirname, 'src')
 export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
-    monacoEditorPlugin({
-      languageWorkers: ['editorWorkerService', 'json', 'typescript']
-    }),
     AutoImport({
       // Auto import functions from Vue, e.g. ref, reactive, toRef...
       // 自动导入 Vue 相关函数，如：ref, reactive, toRef 等
@@ -78,8 +70,5 @@ export default defineConfig(({ mode }) => ({
       }
     },
     sourcemap: mode === 'development'
-  },
-  optimizeDeps: {
-    include: ['monaco-editor']
   }
 }))

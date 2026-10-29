@@ -1,6 +1,6 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
-  import MonacoEditor from '../common/MonacoEditor.vue'
+  import CodeEditor from '../common/CodeEditor.vue'
 
   interface Props {
     modelValue: string
@@ -17,11 +17,11 @@
   defineProps<Props>()
   const emit = defineEmits<Emits>()
 
-  const monacoEditorRef = ref<InstanceType<typeof MonacoEditor>>()
+  const codeEditorRef = ref<InstanceType<typeof CodeEditor>>()
 
-  const handleFormat = () => {
+  const handleFormat = async () => {
     try {
-      monacoEditorRef.value?.format()
+      await codeEditorRef.value?.format()
       ElMessage.success('格式化成功')
     } catch (error) {
       console.error('格式化失败:', error)
@@ -60,10 +60,9 @@
 
     <div class="script-editor__body">
       <div class="script-editor__container">
-        <MonacoEditor
-          ref="monacoEditorRef"
+        <CodeEditor
+          ref="codeEditorRef"
           :model-value="modelValue"
-          language="javascript"
           height="400px"
           @update:model-value="val => emit('update:modelValue', val)"
           @input="val => emit('input', val)"

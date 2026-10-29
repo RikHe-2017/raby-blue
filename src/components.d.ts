@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    CodeEditor: typeof import('./components/common/CodeEditor.vue')['default']
     ConfigSection: typeof import('./components/proxy/ConfigSection.vue')['default']
     ContentHeader: typeof import('./components/proxy/ContentHeader.vue')['default']
     ElButton: typeof import('element-plus/es')['ElButton']
@@ -33,8 +34,6 @@ declare module 'vue' {
     IEpSearch: typeof import('~icons/ep/search')['default']
     IEpSetting: typeof import('~icons/ep/setting')['default']
     IEpVideoPlay: typeof import('~icons/ep/video-play')['default']
-    JsonEditor: typeof import('./components/proxy/JsonEditor.vue')['default']
-    MonacoEditor: typeof import('./components/common/MonacoEditor.vue')['default']
     NameEditor: typeof import('./components/proxy/NameEditor.vue')['default']
     ProxyTree: typeof import('./components/proxy/ProxyTree.vue')['default']
     ProxyView: typeof import('./components/proxy/ProxyView.vue')['default']
