@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "build:dev": "vue-tsc -b && NODE_ENV=development vite build --mode development",
+    "build:dev": "vue-tsc -b && vite build --mode development",
     "build:extension": "npm run build && node scripts/build-extension.js",
     "preview": "vite preview",
     "generate-icons": "node scripts/generate-icons.js",
+    "test:config-transfer": "node --experimental-strip-types --test src/components/config-transfer/transfer.test.mjs",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
     "lint:check": "eslint . --ext .vue,.js,.ts,.jsx,.tsx",
     "format": "prettier --write .",
@@ -33,6 +34,7 @@
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
+    "@crxjs/vite-plugin": "^2.7.1",
     "@eslint/js": "^9.31.0",
     "@iconify-json/ep": "^1.2.3",
     "@types/node": "^22.15.19",

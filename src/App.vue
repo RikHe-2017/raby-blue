@@ -1,12 +1,41 @@
 <script lang="ts" setup>
-  import { ref, onMounted, watch } from 'vue'
-  import { ElConfigProvider } from 'element-plus'
+  import { computed, defineAsyncComponent, nextTick, ref, onMounted, watch } from 'vue'
+  import { ElConfigProvider, ElMessage } from 'element-plus'
   import ProxyView from './components/proxy/ProxyView.vue'
   import ScriptView from './components/script/ScriptView.vue'
   import { createStorageAdapter } from './stores/storage'
+  import { useProxyStore } from './stores/proxy'
+  import { useScriptStore } from './stores/script'
+
+  const ConfigTransferDialog = defineAsyncComponent(
+    () => import('./components/config-transfer/ConfigTransferDialog.vue')
+  )
 
   const storage = createStorageAdapter()
   const activeTab = ref<'proxy' | 'script'>('proxy')
+  const proxyView = ref<InstanceType<typeof ProxyView>>()
+  const scriptView = ref<InstanceType<typeof ScriptView>>()
+  const transferVisible = ref(false)
+  const openingTransfer = ref(false)
+  const viewsPaused = ref(false)
+  const showProxyView = computed(() => !viewsPaused.value && activeTab.value === 'proxy')
+  const showScriptView = computed(() => !viewsPaused.value && activeTab.value === 'script')
+
+  const openTransfer = async () => {
+    if (openingTransfer.value) return
+    openingTransfer.value = true
+    try {
+      await proxyView.value?.flushPendingChanges()
+      await scriptView.value?.flushPendingChanges()
+      await Promise.all([useProxyStore().loadConfig(), useScriptStore().loadConfig()])
+      await nextTick()
+      transferVisible.value = true
+    } catch (error) {
+      ElMessage.error(`读取配置失败：${error instanceof Error ? error.message : '未知错误'}`)
+    } finally {
+      openingTransfer.value = false
+    }
+  }
 
   // 加载保存的 tab 状态
   onMounted(async () => {
@@ -33,7 +62,7 @@
     <div class="app">
       <!-- 标签页切换 -->
       <div class="app__tabs">
-        <el-tabs v-model="activeTab" @tab-change="handleTabChange" lazy>
+        <el-tabs v-model="activeTab" class="app__navigation" @tab-change="handleTabChange" lazy>
           <el-tab-pane label="代理配置" name="proxy">
             <template #label>
               <span class="app__tab-label">
@@ -51,13 +80,31 @@
             </template>
           </el-tab-pane>
         </el-tabs>
+        <el-tooltip content="配置导入与导出">
+          <el-button
+            class="app__settings"
+            text
+            circle
+            aria-label="配置导入与导出"
+            :loading="openingTransfer"
+            @click="openTransfer"
+          >
+            <el-icon><i-ep-setting /></el-icon>
+          </el-button>
+        </el-tooltip>
       </div>
 
       <!-- 内容区域 -->
-      <div class="app__content">
-        <ProxyView v-if="activeTab === 'proxy'" />
-        <ScriptView v-if="activeTab === 'script'" />
+      <div class="app__content" :inert="openingTransfer">
+        <ProxyView v-if="showProxyView" ref="proxyView" />
+        <ScriptView v-if="showScriptView" ref="scriptView" />
       </div>
+      <ConfigTransferDialog
+        v-if="transferVisible"
+        v-model="transferVisible"
+        @import-start="viewsPaused = true"
+        @import-end="viewsPaused = false"
+      />
     </div>
   </el-config-provider>
 </template>
@@ -75,6 +122,9 @@
   }
 
   .app__tabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     background: var(--el-bg-color);
     border-bottom: 1px solid var(--el-border-color);
     padding: 0 8px;
@@ -88,6 +138,15 @@
         display: none;
       }
     }
+  }
+
+  .app__navigation {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .app__settings {
+    flex-shrink: 0;
   }
 
   .app__tab-label {

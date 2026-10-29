@@ -249,6 +249,7 @@
 
     // 防抖保存，500ms后保存
     nameSaveTimer = setTimeout(() => {
+      nameSaveTimer = null
       handleSaveItemName()
     }, 500)
   })
@@ -276,6 +277,20 @@
     if (configSaveTimer) clearTimeout(configSaveTimer)
     configSaveTimer = setTimeout(savePendingConfig, 500)
   }
+
+  const flushPendingChanges = async () => {
+    if (!nameSaveTimer && !pendingConfigSave) return
+
+    if (nameSaveTimer) {
+      clearTimeout(nameSaveTimer)
+      nameSaveTimer = null
+      await handleSaveItemName()
+    }
+    savePendingConfig()
+    await proxyStore.saveConfig()
+  }
+
+  defineExpose({ flushPendingChanges })
 </script>
 
 <template>

@@ -16,4 +16,9 @@ export abstract class StorageAdapter {
    * @param value 要存储的值
    */
   abstract set(key: string, value: any): Promise<void>
+
+  /**
+   * 批量保存相关配置，供合并导入一次提交多个存储键。
+   */
+  abstract setMany(values: Record<string, unknown>): Promise<void>
 }

@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { ref, watch } from 'vue'
+  import SaveStatus from '../common/SaveStatus.vue'
 
   interface Props {
     modelValue: string
@@ -36,9 +37,7 @@
         <el-icon class="name-editor__icon"><i-ep-setting /></el-icon>
         <div class="name-editor__title-content">
           <h4>{{ isActiveGroup ? '分组名称' : '脚本名称' }}</h4>
-          <el-icon v-if="isSaved" class="name-editor__saved-icon">
-            <i-ep-check />
-          </el-icon>
+          <SaveStatus :is-saved="isSaved" />
         </div>
       </div>
     </div>
@@ -105,23 +104,7 @@
     }
   }
 
-  .name-editor__saved-icon {
-    color: #67c23a;
-    animation: fadeIn 0.3s;
-  }
-
   .name-editor__body {
     padding: 8px;
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: scale(0.8);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
   }
 </style>

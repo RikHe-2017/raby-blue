@@ -1,6 +1,5 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
-  import { ElMessage } from 'element-plus'
   import ScriptTree from './ScriptTree.vue'
   import { useScriptStore } from '../../stores/script'
   import type { ScriptGroup, ScriptNode, Script } from '../../types/script'
@@ -56,64 +55,6 @@
     }
   }
 
-  // 导出配置 - 直接处理
-  const handleExportConfig = () => {
-    try {
-      const exportData = {
-        version: '1.0.0',
-        exportTime: new Date().toISOString(),
-        config: scriptStore.config
-      }
-      const dataStr = JSON.stringify(exportData, null, 2)
-      const dataBlob = new Blob([dataStr], { type: 'application/json' })
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(dataBlob)
-      link.download = `script-config-${new Date().toISOString().slice(0, 10)}.json`
-      link.click()
-      URL.revokeObjectURL(link.href)
-      ElMessage.success('配置导出成功')
-    } catch (error) {
-      console.error('导出配置失败:', error)
-      ElMessage.error('导出配置失败')
-    }
-  }
-
-  // 导入配置 - 直接处理
-  const handleImportConfig = () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.json'
-    input.onchange = async event => {
-      const file = (event.target as HTMLInputElement).files?.[0]
-      if (!file) return
-      try {
-        const text = await file.text()
-        const importData = JSON.parse(text)
-        if (!importData.config || !importData.config.groups) {
-          throw new Error('无效的配置文件格式')
-        }
-        if (confirm('导入配置将覆盖现有配置，是否继续？')) {
-          scriptStore.config.enabled = importData.config.enabled
-          scriptStore.config.groups = importData.config.groups
-          await scriptStore.saveConfig()
-          ElMessage.success('配置导入成功')
-        }
-      } catch (error) {
-        console.error('导入配置失败:', error)
-        ElMessage.error(`导入配置失败: ${error instanceof Error ? error.message : '未知错误'}`)
-      }
-    }
-    input.click()
-  }
-
-  const handleExportImportCommand = (command: string) => {
-    if (command === 'export') {
-      handleExportConfig()
-    } else if (command === 'import') {
-      handleImportConfig()
-    }
-  }
-
   const handleNodeClick = (data: ScriptNode) => {
     // 直接处理节点点击逻辑，更新父组件的 UI 状态
     if (data.type === 'group') {
@@ -143,17 +84,6 @@
             <el-dropdown-menu>
               <el-dropdown-item command="category"> 创建分类 </el-dropdown-item>
               <el-dropdown-item command="script"> 创建脚本 </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <el-dropdown @command="handleExportImportCommand">
-          <el-icon class="sidebar__header-icon sidebar__header-icon--export-import">
-            <i-ep-setting />
-          </el-icon>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="export"> 导出配置 </el-dropdown-item>
-              <el-dropdown-item command="import"> 导入配置 </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>

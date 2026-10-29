@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 dist/
+dist-dev/
 *.min.js
 
 # Build outputs
@@ -44,4 +45,4 @@ coverage/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db

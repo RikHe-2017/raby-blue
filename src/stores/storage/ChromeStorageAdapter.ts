@@ -125,7 +125,13 @@ export class ChromeStorageAdapter extends StorageAdapter {
   }
 
   async set(key: string, value: any): Promise<void> {
-    const convertedValue = this.convertArrayToChromeStorage(value)
-    await chrome.storage.local.set({ [key]: convertedValue })
+    await this.setMany({ [key]: value })
+  }
+
+  async setMany(values: Record<string, unknown>): Promise<void> {
+    const convertedValues = Object.fromEntries(
+      Object.entries(values).map(([key, value]) => [key, this.convertArrayToChromeStorage(value)])
+    )
+    await chrome.storage.local.set(convertedValues)
   }
 }

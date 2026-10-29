@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 dist/
+dist-dev/
 *.min.js
 
 # Build outputs
@@ -42,4 +43,4 @@ ehthumbs.db
 Thumbs.db
 
 # Public assets
-public/ 
+public/

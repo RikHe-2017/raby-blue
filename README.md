@@ -39,6 +39,14 @@ npm run build:dev
 npm run build
 ```
 
+运行 `npm run dev` 后，在 `chrome://extensions/` 开启开发者模式，点击“加载已解压的扩展程序”，选择项目下的 `dist-dev` 目录。开发服务器需要保持运行。
+
+开发版名称为 `RabyBlue Dev`。修改 Vue 页面和样式会通过 Vite 热更新；修改后台脚本会自动重新加载扩展，此时需要重新打开弹出窗口。
+
+开发服务默认使用端口 5174。端口被占用时可运行 `npm run dev -- --port 5175`，待启动完成后重新加载开发扩展。
+
+`dist-dev` 仅用于开发；`npm run build` 生成的 `dist` 是独立运行的生产扩展，不依赖开发服务器。扩展清单统一维护在 `manifest.config.ts`，由 CRXJS 生成最终的 `manifest.json`。
+
 ### 代码质量
 
 ```bash

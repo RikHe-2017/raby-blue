@@ -55,6 +55,13 @@ export class IndexedDBStorageAdapter extends StorageAdapter {
   }
 
   async set(key: string, value: any): Promise<void> {
+    await this.setMany({ [key]: value })
+  }
+
+  async setMany(values: Record<string, unknown>): Promise<void> {
+    const entries = Object.entries(values).map(
+      ([key, value]) => [key, JSON.stringify(value)] as const
+    )
     await this.init()
 
     return new Promise((resolve, reject) => {
@@ -65,12 +72,13 @@ export class IndexedDBStorageAdapter extends StorageAdapter {
 
       const transaction = this.db.transaction(this.storeName, 'readwrite')
       const store = transaction.objectStore(this.storeName)
-      // 将数据序列化为字符串
-      const serializedValue = JSON.stringify(value)
-      const request = store.put(serializedValue, key)
-
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve()
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error('Storage transaction aborted'))
+      for (const [key, value] of entries) {
+        store.put(value, key)
+      }
     })
   }
 }

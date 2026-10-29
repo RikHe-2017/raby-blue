@@ -17,16 +17,11 @@ async function buildExtension() {
     }
 
     // 检查manifest.json是否存在
-    const manifestSrc = resolve(__dirname, '../public/manifest.json')
     const manifestDest = resolve(__dirname, '../dist/manifest.json')
 
-    if (!fs.existsSync(manifestSrc)) {
-      throw new Error('manifest.json 文件不存在')
+    if (!fs.existsSync(manifestDest)) {
+      throw new Error('dist/manifest.json 不存在，请先运行 npm run build')
     }
-
-    // 复制manifest.json到dist目录
-    fs.copyFileSync(manifestSrc, manifestDest)
-    console.log('✅ 复制manifest.json')
 
     // 复制图标文件
     const iconsDir = resolve(__dirname, '../public/icons')

@@ -20,7 +20,6 @@
     <div class="content-header__content">
       <div class="content-header__title">
         <div class="content-header__title-wrapper">
-          <el-icon class="content-header__title-icon"><i-ep-setting /></el-icon>
           <div class="content-header__title-content">
             <span class="content-header__title-text">RabyBlue</span>
             <span class="content-header__subtitle">一个浏览器请求代理插件</span>
@@ -57,7 +56,6 @@
   .content-header__title-wrapper {
     display: flex;
     align-items: center;
-    gap: var(--el-component-size-small);
   }
 
   .content-header__title-content {

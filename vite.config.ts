@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import { crx } from '@crxjs/vite-plugin'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
@@ -7,6 +8,7 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import Icons from 'unplugin-icons/vite'
 import IconsResolver from 'unplugin-icons/resolver'
+import manifest from './manifest.config'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -14,8 +16,9 @@ const __dirname = dirname(__filename)
 const pathSrc = resolve(__dirname, 'src')
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ command, mode }) => ({
   plugins: [
+    crx({ manifest }),
     vue(),
     AutoImport({
       // Auto import functions from Vue, e.g. ref, reactive, toRef...
@@ -57,18 +60,11 @@ export default defineConfig(({ mode }) => ({
   },
 
   build: {
-    outDir: 'dist',
-    rollupOptions: {
-      input: {
-        popup: resolve(__dirname, 'index.html'),
-        background: resolve(__dirname, 'src/background.ts')
-      },
-      output: {
-        entryFileNames: '[name].js',
-        chunkFileNames: '[name].js',
-        assetFileNames: '[name].[ext]'
-      }
-    },
+    outDir: command === 'serve' ? 'dist-dev' : 'dist',
     sourcemap: mode === 'development'
+  },
+  server: {
+    port: 5174,
+    strictPort: true
   }
 }))

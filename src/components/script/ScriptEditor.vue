@@ -1,6 +1,7 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
   import CodeEditor from '../common/CodeEditor.vue'
+  import SaveStatus from '../common/SaveStatus.vue'
 
   interface Props {
     modelValue: string
@@ -41,9 +42,7 @@
         <el-icon class="script-editor__icon"><i-ep-document /></el-icon>
         <div class="script-editor__title-content">
           <h4>JS 代码编辑器</h4>
-          <el-icon v-if="isSaved" class="script-editor__saved-icon">
-            <i-ep-check />
-          </el-icon>
+          <SaveStatus :is-saved="isSaved" />
         </div>
       </div>
       <div class="script-editor__actions">
@@ -128,11 +127,6 @@
     }
   }
 
-  .script-editor__saved-icon {
-    color: #67c23a;
-    animation: fadeIn 0.3s;
-  }
-
   .script-editor__actions {
     display: flex;
     gap: 12px;
@@ -172,16 +166,5 @@
     margin: 0;
     font-size: 12px;
     color: var(--el-text-color-regular);
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: scale(0.8);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
   }
 </style>

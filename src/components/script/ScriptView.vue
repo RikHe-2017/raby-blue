@@ -141,7 +141,6 @@
     scriptStore.saveUIState()
   })
 
-
   const handleEditScript = (scriptData: ScriptNode) => {
     if (!isScript(scriptData)) return
     activeGroupId.value = scriptData.groupId
@@ -153,7 +152,11 @@
     groups,
     () => {
       // 检查当前选中的脚本是否还存在
-      if (activeScript.value === null && activeItemId.value && activeItemId.value !== activeGroupId.value) {
+      if (
+        activeScript.value === null &&
+        activeItemId.value &&
+        activeItemId.value !== activeGroupId.value
+      ) {
         // 脚本被删除了，清空选中状态
         activeItemId.value = ''
         activeItemName.value = ''
@@ -188,10 +191,10 @@
       clearTimeout(nameSaveTimer)
     }
     nameSaveTimer = setTimeout(() => {
+      nameSaveTimer = null
       handleSaveItemName()
     }, 500)
   })
-
 
   const saveScriptContent = () => {
     if (activeScript.value) {
@@ -209,9 +212,28 @@
       clearTimeout(contentSaveTimer)
     }
     contentSaveTimer = setTimeout(() => {
+      contentSaveTimer = null
       saveScriptContent()
     }, 800)
   })
+
+  const flushPendingChanges = async () => {
+    if (!nameSaveTimer && !contentSaveTimer) return
+
+    if (nameSaveTimer) {
+      clearTimeout(nameSaveTimer)
+      nameSaveTimer = null
+      await handleSaveItemName()
+    }
+    if (contentSaveTimer) {
+      clearTimeout(contentSaveTimer)
+      contentSaveTimer = null
+      saveScriptContent()
+    }
+    await scriptStore.saveConfig()
+  }
+
+  defineExpose({ flushPendingChanges })
 
   /**
    * 检查是否在浏览器扩展环境中运行

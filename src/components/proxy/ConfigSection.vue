@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import NameEditor from './NameEditor.vue'
+  import SaveStatus from '../common/SaveStatus.vue'
   import type { ProxyRule } from '../../types/proxy'
 
   interface Props {
@@ -35,9 +36,9 @@
 
     <!-- 代理配置区域 -->
     <div v-if="!isActiveGroup && activeRule" class="config-section__proxy">
-      <div class="config-section__save-status" role="status" aria-live="polite">
-        <el-icon v-if="isConfigSaved" class="config-section__saved-icon"><i-ep-check /></el-icon>
-        <span>{{ isConfigSaved ? '已保存' : '待保存' }}</span>
+      <div class="config-section__proxy-header">
+        <h4 class="config-section__proxy-title">代理配置</h4>
+        <SaveStatus :is-saved="isConfigSaved" />
       </div>
       <div class="config-section__fields">
         <div class="config-section__field">
@@ -92,30 +93,29 @@
 
   .config-section__proxy {
     min-width: 0;
-    padding: 12px 8px;
     background: var(--el-bg-color);
     border-radius: 4px;
+    overflow: hidden;
   }
 
-  .config-section__save-status {
+  .config-section__proxy-header {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-    min-height: 20px;
-    margin-bottom: 8px;
-    color: var(--el-text-color-secondary);
-    font-size: 12px;
+    justify-content: space-between;
+    padding: 8px;
+    background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
+    border-bottom: 1px solid var(--el-border-color);
   }
 
-  .config-section__saved-icon {
-    color: var(--el-color-success);
+  .config-section__proxy-title {
+    margin: 0;
   }
 
   .config-section__fields {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    padding: 8px;
   }
 
   .config-section__field {
