@@ -6,8 +6,8 @@ import fs from 'fs'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const sizes = [16, 48, 128]
-const inputFile = path.join(__dirname, '../public/icons/icon.svg')
+const sizes = [16, 32, 48, 128]
+const inputFile = path.join(__dirname, './assets/icon-source.png')
 const outputDir = path.join(__dirname, '../public/icons')
 
 async function generateIcons() {

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
   import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-  import * as monaco from 'monaco-editor'
+  import { monaco } from '../../utils/monaco'
   import type { editor } from 'monaco-editor'
 
   interface Props {

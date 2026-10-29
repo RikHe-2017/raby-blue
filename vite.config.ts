@@ -19,10 +19,12 @@ const __dirname = dirname(__filename)
 const pathSrc = resolve(__dirname, 'src')
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
-    monacoEditorPlugin({}),
+    monacoEditorPlugin({
+      languageWorkers: ['editorWorkerService', 'json', 'typescript']
+    }),
     AutoImport({
       // Auto import functions from Vue, e.g. ref, reactive, toRef...
       // 自动导入 Vue 相关函数，如：ref, reactive, toRef 等
@@ -75,9 +77,9 @@ export default defineConfig({
         assetFileNames: '[name].[ext]'
       }
     },
-    sourcemap: process.env.NODE_ENV === 'development'
+    sourcemap: mode === 'development'
   },
   optimizeDeps: {
     include: ['monaco-editor']
   }
-})
+}))
