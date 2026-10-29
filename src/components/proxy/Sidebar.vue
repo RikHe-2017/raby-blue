@@ -6,7 +6,7 @@
   import { collectProxyEntries } from './sidebar-projections'
   import { useUserPreferencesStore } from '../../stores/user-preferences'
   import { useProxyStore } from '../../stores/proxy'
-  import type { ProxyGroup, ProxyNode, ProxyRule } from '../../types/proxy'
+  import type { ProxyGroup, ProxyNode } from '../../types/proxy'
 
   interface Props {
     groups: ProxyGroup[]
@@ -70,7 +70,7 @@
     }
   }
 
-  // Header 下拉菜单：创建顶级分组或代理
+  // Header 下拉菜单：创建顶级分组
   const handleDropdownCommand = (command: string) => {
     if (command === 'category') {
       const newGroup: ProxyGroup = {
@@ -81,30 +81,6 @@
         children: []
       }
       proxyStore.addGroup(newGroup)
-    } else if (command === 'proxy') {
-      const groupId = props.activeGroupId
-      if (!groupId) {
-        // 如果没有选中分组，先创建一个默认分组
-        const newGroup: ProxyGroup = {
-          id: crypto.randomUUID(),
-          name: '新分类',
-          enabled: false,
-          type: 'group',
-          children: []
-        }
-        proxyStore.addGroup(newGroup)
-        return
-      }
-      const newRule: ProxyRule = {
-        id: crypto.randomUUID(),
-        name: '新代理',
-        sourceUrl: '',
-        targetUrl: '',
-        enabled: false,
-        groupId,
-        type: 'rule'
-      }
-      proxyStore.addRule(groupId, newRule)
     }
   }
 
@@ -136,7 +112,6 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="category"> 创建分类 </el-dropdown-item>
-              <el-dropdown-item command="proxy"> 创建代理 </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>

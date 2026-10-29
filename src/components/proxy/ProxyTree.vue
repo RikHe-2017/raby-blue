@@ -200,6 +200,7 @@
     :props="treeProps"
     node-key="id"
     :default-expanded-keys="expandedKeys"
+    :auto-expand-parent="false"
     :current-node-key="currentItemId"
     :expand-on-click-node="false"
     highlight-current
