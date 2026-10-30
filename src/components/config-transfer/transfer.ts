@@ -64,6 +64,12 @@ function validateConfig(value: unknown, kind: ConfigKind): void {
         throw new Error(`代理“${node.name}”的 favorite 必须为布尔值`)
       }
       if (
+        node.showSuccessNotification !== undefined &&
+        typeof node.showSuccessNotification !== 'boolean'
+      ) {
+        throw new Error(`代理“${node.name}”的 showSuccessNotification 必须为布尔值`)
+      }
+      if (
         node.type !== 'rule' ||
         typeof node.enabled !== 'boolean' ||
         typeof node.sourceUrl !== 'string' ||

@@ -16,6 +16,52 @@ const proxy = (children = []) => ({
   groups: [{ id: 'g', name: '环境', enabled: true, type: 'group', children }]
 })
 
+test('代理成功提示开关随导入导出保留，增量同名保留本地，缺失字段仍允许，错误类型被拒绝', () => {
+  const local = proxy([{ ...rule('local', '已有', 'g'), showSuccessNotification: true }])
+  const incoming = proxy([
+    { ...rule('remote', '已有', 'g'), showSuccessNotification: false },
+    { ...rule('new', '新增', 'g'), showSuccessNotification: true }
+  ])
+  const scripts = { enabled: false, groups: [] }
+  const backup = parseBackup(JSON.stringify(createBackup('proxy', incoming, scripts, 'now')))
+  assert.deepEqual(
+    backup.proxyConfig.groups[0].children.map(item => item.showSuccessNotification),
+    [false, true]
+  )
+  assert.deepEqual(
+    applyBackup(
+      { proxyConfig: local, scriptConfig: scripts },
+      backup,
+      'merge'
+    ).proxyConfig.groups[0].children.map(item => item.showSuccessNotification),
+    [true, true]
+  )
+  assert.equal(
+    applyBackup({ proxyConfig: local, scriptConfig: scripts }, backup, 'replace').proxyConfig
+      .groups[0].children[0].showSuccessNotification,
+    false
+  )
+  assert.doesNotThrow(() =>
+    parseBackup(
+      JSON.stringify({ version: '1.0.0', proxyConfig: proxy([rule('old', '旧代理', 'g')]) })
+    )
+  )
+  for (const value of ['false', 0, null]) {
+    assert.throws(
+      () =>
+        parseBackup(
+          JSON.stringify({
+            version: '1.0.0',
+            proxyConfig: proxy([
+              { ...rule('bad', '非法开关', 'g'), showSuccessNotification: value }
+            ])
+          })
+        ),
+      /showSuccessNotification/
+    )
+  }
+})
+
 test('收藏字段随源代理导出、覆盖和增量导入，旧文件未填写时仍兼容', () => {
   const local = proxy([{ ...rule('r', '代理', 'g'), favorite: true }])
   const incoming = proxy([

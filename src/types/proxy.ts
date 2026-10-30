@@ -13,6 +13,7 @@ export interface ProxyRule {
   name: string
   enabled: boolean
   favorite?: boolean // 未填写视为未收藏，兼容旧配置
+  showSuccessNotification?: boolean // 未填写视为关闭页面代理成功提示
   sourceUrl: string
   targetUrl: string
   requestHeaders?: HeaderSetting[]

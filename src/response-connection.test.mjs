@@ -18,12 +18,19 @@ const rules = [
 ]
 
 function browserFixture() {
-  const state = { connected: false, attachCount: 0, commands: [] }
+  const state = {
+    connected: false,
+    attachCount: 0,
+    commands: [],
+    badges: [],
+    url: 'http://example.test/'
+  }
   const chrome = {
     debugger: {
       onEvent: event(),
       onDetach: event(),
       async attach() {
+        await state.onAttach?.()
         state.connected = true
         state.attachCount++
       },
@@ -33,13 +40,23 @@ function browserFixture() {
       async sendCommand(session, method, params) {
         if (!state.connected) throw new Error('Debugger is not attached')
         state.commands.push({ session, method, params })
+        return state.onCommand?.(session, method, params)
       }
     },
-    action: { async setBadgeText() {}, async setBadgeBackgroundColor() {}, async setTitle() {} },
+    action: {
+      async setBadgeText(value) {
+        state.badges.push(value)
+      },
+      async setBadgeBackgroundColor() {},
+      async setTitle() {}
+    },
     webNavigation: { onBeforeNavigate: event(), onErrorOccurred: event() },
     tabs: {
       onUpdated: event(),
       onRemoved: event(),
+      async get(id) {
+        return { id, url: state.url }
+      },
       async query() {
         return [{ id: 1, url: 'http://example.test/' }]
       }
@@ -47,6 +64,65 @@ function browserFixture() {
   }
   return { chrome, state }
 }
+
+test('success notifications wait for applied response and completed loading, never network failure', async () => {
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const started = []
+    const completed = []
+    const driver = createResponseReplacement({
+      begin(tabId, rule) {
+        started.push([tabId, rule.id])
+        return () => completed.push(rule.id)
+      }
+    })
+    await driver.update([{ ...rules[0], showSuccessNotification: true }])
+    const paused = {
+      requestId: 'success',
+      networkId: 'net-success',
+      resourceType: 'Document',
+      request: { url: 'http://example.test/page', method: 'GET', headers: {} }
+    }
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', paused)
+    await settle()
+    assert.equal(started.length, 1)
+    assert.deepEqual(completed, [])
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      ...paused,
+      responseStatusCode: 200,
+      responseHeaders: []
+    })
+    await settle()
+    assert.deepEqual(completed, [], 'receiving response headers is not completed loading')
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Network.loadingFinished', {
+      requestId: paused.networkId
+    })
+    assert.deepEqual(completed, ['r'])
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      ...paused,
+      requestId: 'failed',
+      networkId: 'net-failed'
+    })
+    await settle()
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      ...paused,
+      requestId: 'failed',
+      networkId: 'net-failed',
+      responseStatusCode: 200
+    })
+    await settle()
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Network.loadingFailed', {
+      requestId: 'net-failed',
+      errorText: 'aborted'
+    })
+    assert.deepEqual(completed, ['r'])
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
 
 test('source headers do not depend on Network event order or an optional network ID', async () => {
   const fixture = browserFixture()
@@ -120,6 +196,349 @@ test('source headers do not depend on Network event order or an optional network
         }
       }
     }
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('expired interception IDs do not set an error badge or receive a second terminal command', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    await driver.update(rules)
+    fixture.state.commands.length = 0
+    fixture.state.badges.length = 0
+    fixture.state.onCommand = async (_session, method) => {
+      if (method === 'Fetch.continueRequest')
+        throw new Error('{"code":-32602,"message":"Invalid InterceptionId."}')
+    }
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      requestId: 'expired',
+      resourceType: 'Script',
+      request: { url: 'http://example.test/a.js', method: 'GET', headers: {} }
+    })
+    await settle()
+    assert.equal(
+      fixture.state.commands.some(item => item.method === 'Fetch.failRequest'),
+      false
+    )
+    assert.equal(
+      fixture.state.badges.some(item => item.text === '!'),
+      false
+    )
+    assert.equal(console.error.mock.callCount(), 0)
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('detached and foreign sessions cannot process late interception events', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    await driver.update(rules)
+    fixture.chrome.debugger.onDetach.emit({ tabId: 1 }, 'target_closed')
+    await settle()
+    fixture.state.commands.length = 0
+    fixture.state.badges.length = 0
+    for (const session of [{ tabId: 1 }, { tabId: 9 }, { tabId: 1, sessionId: 'removed' }]) {
+      fixture.chrome.debugger.onEvent.emit(session, 'Fetch.requestPaused', {
+        requestId: 'late',
+        resourceType: 'Script',
+        request: { url: 'http://example.test/a.js', method: 'GET', headers: {} }
+      })
+    }
+    await settle()
+    assert.deepEqual(fixture.state.commands, [])
+    assert.deepEqual(fixture.state.badges, [])
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('duplicate in-flight pause events have one command and stale rejections cannot fail a new session', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    await driver.update(rules)
+    let rejectCommand
+    fixture.state.onCommand = (_session, method) =>
+      method === 'Fetch.continueRequest'
+        ? new Promise((_resolve, reject) => {
+            rejectCommand = reject
+          })
+        : undefined
+    const pause = {
+      requestId: 'pending',
+      resourceType: 'Script',
+      request: { url: 'http://example.test/a.js', headers: {} }
+    }
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', pause)
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', pause)
+    await settle()
+    assert.equal(
+      fixture.state.commands.filter(item => item.method === 'Fetch.continueRequest').length,
+      1
+    )
+    fixture.chrome.debugger.onDetach.emit({ tabId: 1 }, 'target_closed')
+    fixture.state.onCommand = undefined
+    await driver.update(rules)
+    fixture.state.badges.length = 0
+    rejectCommand(new Error('old session failed'))
+    await settle()
+    assert.equal(
+      fixture.state.commands.some(item => item.method === 'Fetch.failRequest'),
+      false
+    )
+    assert.equal(
+      fixture.state.badges.some(item => item.text === '!'),
+      false
+    )
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('unsupported child Fetch capability is resumed and not retried during configuration changes', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    await driver.update(rules)
+    fixture.state.onCommand = (session, method) => {
+      if (session.sessionId === 'worker' && method === 'Fetch.enable')
+        throw new Error('{"code":-32601,"message":"\'Fetch.enable\' wasn\'t found"}')
+    }
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Target.attachedToTarget', {
+      sessionId: 'worker',
+      targetInfo: { type: 'worker' },
+      waitingForDebugger: true
+    })
+    await settle()
+    await driver.update([
+      { ...rules[0], requestHeaders: [{ id: 'h', enabled: true, name: 'X-Test', value: 'yes' }] }
+    ])
+    assert.equal(
+      fixture.state.commands.filter(
+        item => item.session.sessionId === 'worker' && item.method === 'Fetch.enable'
+      ).length,
+      1
+    )
+    assert.ok(
+      fixture.state.commands.some(
+        item =>
+          item.session.sessionId === 'worker' && item.method === 'Runtime.runIfWaitingForDebugger'
+      )
+    )
+    assert.equal(console.error.mock.callCount(), 0)
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('child detachment during initialization cannot register a stale session', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    await driver.update(rules)
+    let finishEnable
+    fixture.state.onCommand = (session, method) =>
+      session.sessionId === 'frame' && method === 'Fetch.enable'
+        ? new Promise(resolve => {
+            finishEnable = resolve
+          })
+        : undefined
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Target.attachedToTarget', {
+      sessionId: 'frame',
+      targetInfo: { type: 'iframe' },
+      waitingForDebugger: true
+    })
+    await settle()
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Target.detachedFromTarget', {
+      sessionId: 'frame'
+    })
+    finishEnable()
+    await settle()
+    fixture.state.commands.length = 0
+    fixture.state.onCommand = undefined
+    await driver.update([
+      { ...rules[0], requestHeaders: [{ id: 'h', enabled: true, name: 'X-Test', value: 'yes' }] }
+    ])
+    assert.equal(
+      fixture.state.commands.some(item => item.session.sessionId === 'frame'),
+      false
+    )
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('restricted current tab is skipped even when a navigation or tab snapshot says HTTP', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  fixture.state.url = 'chrome://extensions/'
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    await driver.update(rules)
+    fixture.chrome.webNavigation.onBeforeNavigate.emit({
+      tabId: 1,
+      frameId: 0,
+      url: 'http://example.test/'
+    })
+    await settle()
+    assert.equal(fixture.state.attachCount, 0)
+    assert.equal(
+      fixture.state.badges.some(item => item.text === '!'),
+      false
+    )
+    fixture.state.url = 'http://example.test/'
+    fixture.chrome.tabs.onUpdated.emit(1, { url: fixture.state.url }, { url: fixture.state.url })
+    await settle()
+    assert.equal(fixture.state.attachCount, 1)
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('restricted navigation race does not dismiss future valid connections', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    fixture.state.onAttach = () => {
+      throw new Error('Cannot access a chrome:// URL')
+    }
+    await driver.update(rules)
+    assert.equal(
+      fixture.state.badges.some(item => item.text === '!'),
+      false
+    )
+    fixture.state.onAttach = undefined
+    fixture.chrome.tabs.onUpdated.emit(1, { status: 'complete' }, { url: fixture.state.url })
+    await settle()
+    assert.equal(fixture.state.attachCount, 1)
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('real header command failures remain visible and fail the paused request once', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    await driver.update(rules)
+    fixture.state.onCommand = (_session, method) => {
+      if (method === 'Fetch.continueRequest') throw new Error('Invalid header name')
+    }
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      requestId: 'bad-header',
+      resourceType: 'Script',
+      request: { url: 'http://example.test/a.js', headers: {} }
+    })
+    await settle()
+    assert.equal(
+      fixture.state.badges.some(item => item.text === '!'),
+      true
+    )
+    assert.equal(
+      fixture.state.commands.filter(item => item.method === 'Fetch.failRequest').length,
+      1
+    )
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('cancelled native loading does not produce a false document failure', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    await driver.update(rules)
+    fixture.state.badges.length = 0
+    const request = { url: 'http://example.test/', method: 'GET', headers: {} }
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      requestId: 'cancelled-doc',
+      networkId: 'net',
+      resourceType: 'Document',
+      request
+    })
+    await settle()
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Network.loadingFailed', {
+      requestId: 'net',
+      canceled: true,
+      errorText: 'net::ERR_ABORTED'
+    })
+    await settle()
+    assert.equal(
+      fixture.state.badges.some(item => item.text === '!'),
+      false
+    )
+    assert.equal(console.error.mock.callCount(), 0)
+    await driver.update([], [])
+  } finally {
+    globalThis.chrome = previous
+  }
+})
+
+test('an unexpected child initialization error remains visible but does not leave the child paused', async t => {
+  t.mock.method(console, 'error', () => {})
+  const fixture = browserFixture()
+  const previous = globalThis.chrome
+  globalThis.chrome = fixture.chrome
+  try {
+    const driver = createResponseReplacement()
+    await driver.update(rules)
+    fixture.state.onCommand = (session, method) => {
+      if (session.sessionId === 'frame' && method === 'Fetch.enable')
+        throw new Error('Invalid parameters')
+    }
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Target.attachedToTarget', {
+      sessionId: 'frame',
+      targetInfo: { type: 'iframe' },
+      waitingForDebugger: true
+    })
+    await settle()
+    assert.equal(console.error.mock.callCount(), 1)
+    assert.equal(
+      fixture.state.commands.filter(
+        item =>
+          item.session.sessionId === 'frame' && item.method === 'Runtime.runIfWaitingForDebugger'
+      ).length,
+      1
+    )
     await driver.update([], [])
   } finally {
     globalThis.chrome = previous
@@ -261,6 +680,15 @@ test('completed, failed and detached sessions cannot leak source ownership into 
       }
       await driver.update([rule])
       const session = { tabId: 1, sessionId: 'child' }
+      const attachChild = async () => {
+        fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Target.attachedToTarget', {
+          sessionId: 'child',
+          targetInfo: { type: 'iframe' },
+          waitingForDebugger: true
+        })
+        await settle()
+      }
+      await attachChild()
       fixture.chrome.debugger.onEvent.emit(session, 'Network.requestWillBeSent', {
         requestId: 'net',
         request: { url: 'http://example.test/api' }
@@ -268,6 +696,7 @@ test('completed, failed and detached sessions cannot leak source ownership into 
       if (cleanup === 'disable') {
         await driver.update([], [])
         await driver.update([rule])
+        await attachChild()
       } else if (cleanup === 'Target.detachedFromTarget') {
         fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, cleanup, { sessionId: 'child' })
       } else {
@@ -285,7 +714,8 @@ test('completed, failed and detached sessions cannot leak source ownership into 
       })
       await settle()
       const sent = fixture.state.commands.find(item => item.method === 'Fetch.continueRequest')
-      assert.equal(sent.params.headers, undefined, cleanup)
+      if (cleanup === 'Target.detachedFromTarget') assert.equal(sent, undefined, cleanup)
+      else assert.equal(sent.params.headers, undefined, cleanup)
       await driver.update([], [])
     }
   } finally {

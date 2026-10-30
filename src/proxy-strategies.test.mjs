@@ -166,6 +166,24 @@ test('manager initializes and switches policy without overlapping old redirects'
   assert.deepEqual(proxyConfig, before)
 })
 
+test('notification configuration failure cannot dispose an otherwise working proxy', async t => {
+  t.mock.method(console, 'warn', () => {})
+  const { calls, strategies } = strategyFixture()
+  const manager = new ProxyManager(strategies, () => {
+    throw new Error('observer unavailable')
+  })
+  await manager.refresh(async () => proxyConfig)
+  assert.deepEqual(
+    calls.map(call => call.slice(0, 2)),
+    [
+      ['redirect', 'dispose'],
+      ['response', 'update'],
+      ['redirect', 'update']
+    ]
+  )
+  await manager.dispose()
+})
+
 test('manager serializes source loads and cleans up after failures, then recovers', async () => {
   const { manager, calls, strategies } = strategyFixture()
   let release

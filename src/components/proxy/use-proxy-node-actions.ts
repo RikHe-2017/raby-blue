@@ -29,6 +29,7 @@ export function useProxyNodeActions(emit: ProxyNodeActionEmitter) {
     const newRule: ProxyRule = {
       id: crypto.randomUUID(),
       name: '新代理',
+      showSuccessNotification: false,
       sourceUrl: '',
       targetUrl: '',
       enabled: false,
@@ -53,6 +54,7 @@ export function useProxyNodeActions(emit: ProxyNodeActionEmitter) {
     const duplicatedRule: ProxyRule = {
       id: crypto.randomUUID(),
       name: `${ruleData.name} - 副本`,
+      showSuccessNotification: ruleData.showSuccessNotification === true,
       requestHeaders: ruleData.requestHeaders?.map(row => ({ ...row, id: crypto.randomUUID() })),
       responseHeaders: ruleData.responseHeaders?.map(row => ({ ...row, id: crypto.randomUUID() })),
       sourceUrl: ruleData.sourceUrl || '',

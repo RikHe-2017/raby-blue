@@ -3,12 +3,18 @@ import { createStorageAdapter } from './stores/storage'
 import { ProxyManager } from './proxy/ProxyManager'
 import { RedirectProxy } from './proxy/RedirectProxy'
 import { ResponseProxy } from './proxy/ResponseProxy'
+import { createProxySuccessNotifications } from './proxy/success-notifications'
+import notificationIcon from '/icons/icon32.png?inline'
 
 const storage = createStorageAdapter()
-const proxyManager = new ProxyManager({
-  redirect: new RedirectProxy(),
-  response: new ResponseProxy()
-})
+const notifications = createProxySuccessNotifications(notificationIcon)
+const proxyManager = new ProxyManager(
+  {
+    redirect: new RedirectProxy(),
+    response: new ResponseProxy(notifications)
+  },
+  notifications.update
+)
 
 const refreshProxyConfiguration = () => {
   return proxyManager

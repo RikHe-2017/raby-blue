@@ -1,5 +1,5 @@
-import type { ProxyConfig } from '../types/proxy'
-import type { ProxyMode, ProxyStrategy, RequestPolicy } from './ProxyStrategy'
+import type { ProxyConfig, ProxyRule } from '../types/proxy'
+import type { ProxyMode, ProxyStrategy, RequestPolicy, RequestType } from './ProxyStrategy'
 import { getEnabledProxyRules } from '../document-response-rules.ts'
 import { DEFAULT_REQUEST_POLICY, splitStrategyConfig } from './request-policy.ts'
 
@@ -7,9 +7,22 @@ export class ProxyManager {
   private readonly strategies: Record<ProxyMode, ProxyStrategy>
   private queue: Promise<void> = Promise.resolve()
   private appliedPolicy = ''
+  private readonly onApplied: (rules: ProxyRule[], types: RequestType[]) => void
 
-  constructor(strategies: Record<ProxyMode, ProxyStrategy>) {
+  constructor(
+    strategies: Record<ProxyMode, ProxyStrategy>,
+    onApplied = (_rules: ProxyRule[], _types: RequestType[]) => {}
+  ) {
     this.strategies = strategies
+    this.onApplied = onApplied
+  }
+
+  private notifyApplied(rules: ProxyRule[], types: RequestType[]) {
+    try {
+      this.onApplied(rules, types)
+    } catch (error) {
+      console.warn('Proxy notification setup failed:', error)
+    }
   }
 
   refresh(
@@ -28,7 +41,9 @@ export class ProxyManager {
           await this.strategies.response.update(plan.response)
           await this.strategies.redirect.update(plan.redirect)
           this.appliedPolicy = signature
+          this.notifyApplied(plan.redirect.rules, plan.redirect.resourceTypes)
         } catch (error) {
+          this.notifyApplied([], [])
           this.appliedPolicy = ''
           const cleanup = await Promise.allSettled(
             Object.values(this.strategies).map(strategy => strategy.dispose())
@@ -47,6 +62,7 @@ export class ProxyManager {
       .catch(() => {})
       .then(async () => {
         this.appliedPolicy = ''
+        this.notifyApplied([], [])
         try {
           await this.strategies.redirect.dispose()
         } finally {

@@ -56,6 +56,23 @@ test('目标值重复提交保持幂等，未命中和未变化的更新保留�
   assert.equal(updateProxyRule(next, 'r', {}), next)
 })
 
+test('代理成功提示开关独立更新源规则，不影响启用和收藏且不修改输入', () => {
+  const original = config().groups
+  const before = structuredClone(original)
+  const next = updateProxyRule(original, 'r', { showSuccessNotification: true })
+  const changed = next[0].children[0].children[0]
+  assert.equal(changed.showSuccessNotification, true)
+  assert.equal(changed.enabled, true)
+  assert.equal(changed.favorite, undefined)
+  assert.deepEqual(original, before)
+  assert.equal(updateProxyRule(next, 'r', { showSuccessNotification: true }), next)
+  assert.equal(
+    updateProxyRule(next, 'r', { showSuccessNotification: false })[0].children[0].children[0]
+      .showSuccessNotification,
+    false
+  )
+})
+
 test('收藏根分组递归更新所有后代代理，取消收藏同样递归，不改变启用和目录结构', () => {
   const original = config().groups
   const before = structuredClone(original)

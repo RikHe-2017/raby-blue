@@ -5,6 +5,7 @@ export type ProxyRuleChanges = Partial<
     ProxyRule,
     | 'enabled'
     | 'favorite'
+    | 'showSuccessNotification'
     | 'name'
     | 'sourceUrl'
     | 'targetUrl'

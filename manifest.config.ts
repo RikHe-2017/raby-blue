@@ -14,6 +14,7 @@ export default defineManifest(({ command }) => ({
     'scripting',
     'debugger',
     'webNavigation',
+    'webRequest',
     'tabs'
   ],
   host_permissions: ['<all_urls>'],

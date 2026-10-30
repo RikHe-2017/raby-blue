@@ -1,5 +1,6 @@
 <script lang="ts" setup>
-  import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
+  import { onMounted, onUnmounted, reactive, ref, watch, computed } from 'vue'
+  import { ElMessage } from 'element-plus'
   import Sidebar from './Sidebar.vue'
   import ContentHeader from './ContentHeader.vue'
   import ConfigSection from './ConfigSection.vue'
@@ -19,6 +20,7 @@
   const activeItemName = ref('')
   const isNameSaved = ref(false)
   const isConfigSaved = ref(false)
+  const successNotificationSaves = reactive(new Map<string, Promise<void>>())
   let nameSaveTimer: ReturnType<typeof setTimeout> | null = null
   let configSaveTimer: ReturnType<typeof setTimeout> | null = null
   let pendingConfigSave: (() => void) | null = null
@@ -224,6 +226,21 @@
     proxyStore.toggleGlobalProxy()
   }
 
+  const saveSuccessNotification = async (showSuccessNotification: boolean) => {
+    const rule = activeRule.value
+    if (!rule || successNotificationSaves.has(rule.id)) return
+
+    const operation = proxyStore.updateRule(rule.id, { showSuccessNotification })
+    successNotificationSaves.set(rule.id, operation)
+    try {
+      await operation
+    } catch {
+      ElMessage.error('代理成功提示设置保存失败，请重试')
+    } finally {
+      successNotificationSaves.delete(rule.id)
+    }
+  }
+
   // 监听内容区域状态变化，保存到 store（用于内容区域恢复）
   watch([activeGroupId, activeItemId], () => {
     proxyStore.saveUIState({ activeGroupId: activeGroupId.value, activeItemId: activeItemId.value })
@@ -315,6 +332,7 @@
   }
 
   const flushPendingChanges = async () => {
+    await Promise.all(successNotificationSaves.values())
     await headerDrafts.flush()
     if (!nameSaveTimer && !pendingConfigSave) return
 
@@ -351,6 +369,9 @@
         <ConfigSection
           :active-group-id="activeGroupId"
           :is-active-group="isActiveGroup"
+          :is-success-notification-saving="
+            activeRule ? successNotificationSaves.has(activeRule.id) : false
+          "
           :active-rule="activeRule"
           :active-item-name="activeItemName"
           :source-url="sourceUrl"
@@ -372,6 +393,7 @@
           @update:active-item-name="val => (activeItemName = val)"
           @update:source-url="val => updateProxyAddress('sourceUrl', val)"
           @update:target-url="val => updateProxyAddress('targetUrl', val)"
+          @update:show-success-notification="saveSuccessNotification"
         />
       </div>
     </div>

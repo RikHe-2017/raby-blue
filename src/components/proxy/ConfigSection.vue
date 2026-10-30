@@ -13,6 +13,7 @@
     targetUrl: string
     isNameSaved: boolean
     isConfigSaved: boolean
+    isSuccessNotificationSaving: boolean
     requestHeaders: HeaderSetting[]
     responseHeaders: HeaderSetting[]
     isRequestHeadersSaved: boolean
@@ -25,6 +26,7 @@
     (e: 'update:activeItemName', value: string): void
     (e: 'update:sourceUrl', value: string): void
     (e: 'update:targetUrl', value: string): void
+    (e: 'update:showSuccessNotification', value: boolean): void
     (e: 'update:requestHeaders', value: HeaderSetting[]): void
     (e: 'update:responseHeaders', value: HeaderSetting[]): void
   }
@@ -35,6 +37,25 @@
 
 <template>
   <div v-if="activeGroupId" class="config-section">
+    <section
+      v-if="!isActiveGroup && activeRule"
+      class="config-section__proxy"
+      aria-label="代理成功提示"
+    >
+      <div class="config-section__proxy-header">
+        <h4 class="config-section__proxy-title">代理成功提示</h4>
+        <SaveStatus :is-saved="!isSuccessNotificationSaving" />
+      </div>
+      <div class="config-section__notification-row">
+        <span class="config-section__notification-label">在被代理的页面上展示代理成功提示</span>
+        <el-switch
+          :model-value="activeRule.showSuccessNotification === true"
+          :loading="isSuccessNotificationSaving"
+          aria-label="在被代理的页面上展示代理成功提示"
+          @update:model-value="value => emit('update:showSuccessNotification', value === true)"
+        />
+      </div>
+    </section>
     <!-- 名称编辑区域 -->
     <NameEditor
       :model-value="activeItemName"
@@ -143,6 +164,24 @@
     flex-direction: column;
     gap: 16px;
     padding: 8px;
+  }
+
+  .config-section__notification-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px;
+  }
+
+  .config-section__notification-label {
+    flex: 1;
+    min-width: 0;
+    color: var(--el-text-color-regular);
+    font-size: var(--el-font-size-base);
+  }
+
+  .config-section__notification-row :deep(.el-switch) {
+    flex-shrink: 0;
   }
 
   .config-section__field {
