@@ -203,7 +203,7 @@ test('source headers do not depend on Network event order or an optional network
 })
 
 test('expired interception IDs do not set an error badge or receive a second terminal command', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
   globalThis.chrome = fixture.chrome
@@ -230,7 +230,7 @@ test('expired interception IDs do not set an error badge or receive a second ter
       fixture.state.badges.some(item => item.text === '!'),
       false
     )
-    assert.equal(console.error.mock.callCount(), 0)
+    assert.equal(console.log.mock.callCount(), 0)
     await driver.update([], [])
   } finally {
     globalThis.chrome = previous
@@ -238,7 +238,7 @@ test('expired interception IDs do not set an error badge or receive a second ter
 })
 
 test('detached and foreign sessions cannot process late interception events', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
   globalThis.chrome = fixture.chrome
@@ -266,7 +266,7 @@ test('detached and foreign sessions cannot process late interception events', as
 })
 
 test('duplicate in-flight pause events have one command and stale rejections cannot fail a new session', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
   globalThis.chrome = fixture.chrome
@@ -313,7 +313,7 @@ test('duplicate in-flight pause events have one command and stale rejections can
 })
 
 test('unsupported child Fetch capability is resumed and not retried during configuration changes', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
   globalThis.chrome = fixture.chrome
@@ -345,7 +345,7 @@ test('unsupported child Fetch capability is resumed and not retried during confi
           item.session.sessionId === 'worker' && item.method === 'Runtime.runIfWaitingForDebugger'
       )
     )
-    assert.equal(console.error.mock.callCount(), 0)
+    assert.equal(console.log.mock.callCount(), 0)
     await driver.update([], [])
   } finally {
     globalThis.chrome = previous
@@ -353,7 +353,7 @@ test('unsupported child Fetch capability is resumed and not retried during confi
 })
 
 test('child detachment during initialization cannot register a stale session', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
   globalThis.chrome = fixture.chrome
@@ -394,7 +394,7 @@ test('child detachment during initialization cannot register a stale session', a
 })
 
 test('restricted current tab is skipped even when a navigation or tab snapshot says HTTP', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   fixture.state.url = 'chrome://extensions/'
   const previous = globalThis.chrome
@@ -424,7 +424,7 @@ test('restricted current tab is skipped even when a navigation or tab snapshot s
 })
 
 test('restricted navigation race does not dismiss future valid connections', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
   globalThis.chrome = fixture.chrome
@@ -449,7 +449,7 @@ test('restricted navigation race does not dismiss future valid connections', asy
 })
 
 test('real header command failures remain visible and fail the paused request once', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
   globalThis.chrome = fixture.chrome
@@ -480,7 +480,7 @@ test('real header command failures remain visible and fail the paused request on
 })
 
 test('cancelled native loading does not produce a false document failure', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
   globalThis.chrome = fixture.chrome
@@ -506,7 +506,7 @@ test('cancelled native loading does not produce a false document failure', async
       fixture.state.badges.some(item => item.text === '!'),
       false
     )
-    assert.equal(console.error.mock.callCount(), 0)
+    assert.equal(console.log.mock.callCount(), 0)
     await driver.update([], [])
   } finally {
     globalThis.chrome = previous
@@ -514,7 +514,7 @@ test('cancelled native loading does not produce a false document failure', async
 })
 
 test('an unexpected child initialization error remains visible but does not leave the child paused', async t => {
-  t.mock.method(console, 'error', () => {})
+  t.mock.method(console, 'log', () => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
   globalThis.chrome = fixture.chrome
@@ -531,7 +531,8 @@ test('an unexpected child initialization error remains visible but does not leav
       waitingForDebugger: true
     })
     await settle()
-    assert.equal(console.error.mock.callCount(), 1)
+    assert.equal(console.log.mock.callCount(), 1)
+    assert.equal(console.log.mock.calls[0].arguments[0], '[error]:')
     assert.equal(
       fixture.state.commands.filter(
         item =>

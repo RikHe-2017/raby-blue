@@ -5,6 +5,7 @@ import { RedirectProxy } from './proxy/RedirectProxy'
 import { ResponseProxy } from './proxy/ResponseProxy'
 import { createProxySuccessNotifications } from './proxy/success-notifications'
 import notificationIcon from '/icons/icon32.png?inline'
+import { logError } from './utils/logger.ts'
 
 const storage = createStorageAdapter()
 const notifications = createProxySuccessNotifications(notificationIcon)
@@ -23,7 +24,7 @@ const refreshProxyConfiguration = () => {
       return config ?? { enabled: false, groups: [] }
     })
     .catch(error => {
-      console.error('Proxy configuration update failed:', error)
+      logError('Proxy configuration update failed:', error)
     })
 }
 
@@ -64,7 +65,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
             sendResponse({ success: true, results })
           })
           .catch(error => {
-            console.error('Script execution error:', error)
+            logError('Script execution error:', error)
             sendResponse({
               success: false,
               error: error.message || '脚本执行失败'

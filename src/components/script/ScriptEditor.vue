@@ -2,6 +2,7 @@
   import { ref } from 'vue'
   import CodeEditor from '../common/CodeEditor.vue'
   import SaveStatus from '../common/SaveStatus.vue'
+  import { logError } from '../../utils/logger'
 
   interface Props {
     modelValue: string
@@ -25,7 +26,7 @@
       await codeEditorRef.value?.format()
       ElMessage.success('格式化成功')
     } catch (error) {
-      console.error('格式化失败:', error)
+      logError('格式化失败:', error)
       ElMessage.error('格式化失败，请检查代码语法')
     }
   }

@@ -126,7 +126,11 @@ try {
   const { id } = await cdp.send('Extensions.loadUnpacked', { path: path.resolve('dist') })
   const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'))
   const logs = []
-  worker.on('console', message => logs.push(message.text()))
+  const logEntries = []
+  worker.on('console', message => {
+    logs.push(message.text())
+    logEntries.push({ type: message.type(), text: message.text() })
+  })
   const page = await context.newPage()
   page.on('console', message => {
     if (message.type() === 'error') console.log('PAGE:', message.text())
@@ -569,6 +573,16 @@ try {
     }, sourceOrigin)
   )
   console.log('PASS: unreachable target fails visibly without silent remote fallback')
+  await waitUntil(() =>
+    logEntries.some(entry => entry.type === 'log' && entry.text.startsWith('[error]:'))
+  )
+  assert.deepEqual(
+    logEntries.filter(entry => entry.type === 'error' || entry.type === 'warning'),
+    []
+  )
+  console.log(
+    'PASS: handled proxy failures are normal [error]: logs, not extension error/warning entries'
+  )
   console.log(`Extension under test: ${id}`)
 } catch (error) {
   console.error('INTEGRATION ERROR:', error, 'REQUESTS:', JSON.stringify(requests))

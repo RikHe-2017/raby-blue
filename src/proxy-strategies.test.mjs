@@ -167,7 +167,7 @@ test('manager initializes and switches policy without overlapping old redirects'
 })
 
 test('notification configuration failure cannot dispose an otherwise working proxy', async t => {
-  t.mock.method(console, 'warn', () => {})
+  t.mock.method(console, 'log', () => {})
   const { calls, strategies } = strategyFixture()
   const manager = new ProxyManager(strategies, () => {
     throw new Error('observer unavailable')

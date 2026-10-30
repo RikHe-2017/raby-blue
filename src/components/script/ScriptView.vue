@@ -5,6 +5,7 @@
   import { useScriptStore } from '../../stores/script'
   import type { ScriptGroup, Script, ScriptNode } from '../../types/script'
   import { isScriptGroup, isScript } from '../../types/script'
+  import { logError, logInfo } from '../../utils/logger'
 
   const scriptStore = useScriptStore()
   const configLoaded = ref(false)
@@ -260,7 +261,7 @@
         if (response && response.success) {
           ElMessage.success('脚本执行成功')
           if (response.results) {
-            console.log('执行结果:', response.results)
+            logInfo('执行结果:', response.results)
           }
         } else {
           ElMessage.error(response?.error || '脚本执行失败')
@@ -272,7 +273,7 @@
           const result = eval(scriptContent.value)
           ElMessage.success('脚本执行成功（开发模式）')
           if (result !== undefined) {
-            console.log('执行结果:', result)
+            logInfo('执行结果:', result)
           }
         } catch (evalError) {
           ElMessage.error(
@@ -281,7 +282,7 @@
         }
       }
     } catch (error) {
-      console.error('执行脚本失败:', error)
+      logError('执行脚本失败:', error)
       ElMessage.error(`执行失败: ${error instanceof Error ? error.message : '未知错误'}`)
     }
   }

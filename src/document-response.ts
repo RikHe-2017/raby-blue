@@ -19,6 +19,7 @@ import {
   isUnavailableDebugTarget
 } from './proxy/debugger-errors.ts'
 import type { ProxySuccessObserver } from './proxy/success-notifications'
+import { logError, logWarn } from './utils/logger.ts'
 
 interface PausedRequest {
   requestId: string
@@ -153,7 +154,7 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
 
   const showError = async (tabId: number, message: string, context?: Record<string, unknown>) => {
     errors.set(tabId, message)
-    console.error('Response replacement:', message, ...(context ? [context] : []))
+    logError('Response replacement:', message, ...(context ? [context] : []))
     await chrome.action.setBadgeText({ tabId, text: '!' }).catch(() => {})
     await chrome.action.setBadgeBackgroundColor({ tabId, color: '#f56c6c' }).catch(() => {})
     await chrome.action.setTitle({ tabId, title: `RabyBlue: ${message}` }).catch(() => {})
@@ -557,7 +558,7 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
       void enableSession(target)
         .catch(async error => {
           if (!(error instanceof InterceptionEnded) && !isEndedInterception(error)) {
-            console.error('Child target interception:', { sessionId: child.sessionId, error })
+            logError('Child target interception:', { sessionId: child.sessionId, error })
             await chrome.debugger
               .sendCommand(target, 'Runtime.runIfWaitingForDebugger')
               .catch(() => {})
@@ -588,7 +589,7 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
 
   chrome.debugger.onDetach.addListener((session, reason) => {
     if (session.tabId === undefined || !attached.delete(session.tabId)) return
-    console.warn('Response replacement detached:', { tabId: session.tabId, reason })
+    logWarn('Response replacement detached:', { tabId: session.tabId, reason })
     pending.get(session.tabId)?.forEach(controller => controller.abort())
     pending.delete(session.tabId)
     forgetSessions(session.tabId)

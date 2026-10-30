@@ -2,6 +2,7 @@ import type { ProxyConfig, ProxyRule } from '../types/proxy'
 import type { ProxyMode, ProxyStrategy, RequestPolicy, RequestType } from './ProxyStrategy'
 import { getEnabledProxyRules } from '../document-response-rules.ts'
 import { DEFAULT_REQUEST_POLICY, splitStrategyConfig } from './request-policy.ts'
+import { logError, logWarn } from '../utils/logger.ts'
 
 export class ProxyManager {
   private readonly strategies: Record<ProxyMode, ProxyStrategy>
@@ -21,7 +22,7 @@ export class ProxyManager {
     try {
       this.onApplied(rules, types)
     } catch (error) {
-      console.warn('Proxy notification setup failed:', error)
+      logWarn('Proxy notification setup failed:', error)
     }
   }
 
@@ -49,7 +50,7 @@ export class ProxyManager {
             Object.values(this.strategies).map(strategy => strategy.dispose())
           )
           for (const result of cleanup)
-            if (result.status === 'rejected') console.error('Proxy cleanup failed:', result.reason)
+            if (result.status === 'rejected') logError('Proxy cleanup failed:', result.reason)
           throw error
         }
       })
