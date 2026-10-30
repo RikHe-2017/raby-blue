@@ -1,5 +1,6 @@
 import type { ProxyConfig, ProxyGroup, ProxyNode } from '../../types/proxy'
 import type { ScriptConfig, ScriptGroup, ScriptNode } from '../../types/script'
+import { validateHeaderSettings } from '../../proxy/header-settings.ts'
 
 export type ExportScope = 'proxy' | 'script' | 'all'
 export type ImportMode = 'merge' | 'replace'
@@ -57,6 +58,8 @@ function validateConfig(value: unknown, kind: ConfigKind): void {
       throw new Error(`配置“${node.name}”的所属分组引用不正确`)
     }
     if (kind === 'proxy') {
+      validateHeaderSettings(node.requestHeaders, 'request')
+      validateHeaderSettings(node.responseHeaders, 'response')
       if (node.favorite !== undefined && typeof node.favorite !== 'boolean') {
         throw new Error(`代理“${node.name}”的 favorite 必须为布尔值`)
       }

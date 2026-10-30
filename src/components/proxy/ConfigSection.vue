@@ -1,7 +1,8 @@
 <script lang="ts" setup>
   import NameEditor from './NameEditor.vue'
   import SaveStatus from '../common/SaveStatus.vue'
-  import type { ProxyRule } from '../../types/proxy'
+  import HeaderSettings from './HeaderSettings.vue'
+  import type { HeaderSetting, ProxyRule } from '../../types/proxy'
 
   interface Props {
     activeGroupId: string
@@ -12,12 +13,20 @@
     targetUrl: string
     isNameSaved: boolean
     isConfigSaved: boolean
+    requestHeaders: HeaderSetting[]
+    responseHeaders: HeaderSetting[]
+    isRequestHeadersSaved: boolean
+    isResponseHeadersSaved: boolean
+    requestHeadersError: string
+    responseHeadersError: string
   }
 
   interface Emits {
     (e: 'update:activeItemName', value: string): void
     (e: 'update:sourceUrl', value: string): void
     (e: 'update:targetUrl', value: string): void
+    (e: 'update:requestHeaders', value: HeaderSetting[]): void
+    (e: 'update:responseHeaders', value: HeaderSetting[]): void
   }
 
   defineProps<Props>()
@@ -55,7 +64,7 @@
           />
         </div>
         <div class="config-section__field">
-          <label for="proxy-target-url">目标地址</label>
+          <label for="proxy-target-url">目标地址（选填）</label>
           <el-input
             id="proxy-target-url"
             :model-value="targetUrl"
@@ -69,6 +78,24 @@
         </div>
       </div>
     </div>
+    <template v-if="!isActiveGroup && activeRule">
+      <HeaderSettings
+        title="请求头设置"
+        direction="request"
+        :model-value="requestHeaders"
+        :is-saved="isRequestHeadersSaved"
+        :error="requestHeadersError"
+        @update:model-value="value => emit('update:requestHeaders', value)"
+      />
+      <HeaderSettings
+        title="响应头设置"
+        direction="response"
+        :model-value="responseHeaders"
+        :is-saved="isResponseHeadersSaved"
+        :error="responseHeadersError"
+        @update:model-value="value => emit('update:responseHeaders', value)"
+      />
+    </template>
   </div>
   <div v-else class="config-section config-section--empty">
     <div class="config-section__empty-content">

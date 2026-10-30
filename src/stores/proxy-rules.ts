@@ -1,7 +1,16 @@
 import type { ProxyGroup, ProxyNode, ProxyRule } from '../types/proxy'
 
 export type ProxyRuleChanges = Partial<
-  Pick<ProxyRule, 'enabled' | 'favorite' | 'name' | 'sourceUrl' | 'targetUrl'>
+  Pick<
+    ProxyRule,
+    | 'enabled'
+    | 'favorite'
+    | 'name'
+    | 'sourceUrl'
+    | 'targetUrl'
+    | 'requestHeaders'
+    | 'responseHeaders'
+  >
 >
 
 export function updateProxyRule(

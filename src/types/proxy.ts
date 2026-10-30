@@ -1,6 +1,13 @@
 // 树节点类型：分组或规则
 export type ProxyNode = ProxyGroup | ProxyRule
 
+export interface HeaderSetting {
+  id: string
+  enabled: boolean
+  name: string
+  value: string
+}
+
 export interface ProxyRule {
   id: string
   name: string
@@ -8,6 +15,8 @@ export interface ProxyRule {
   favorite?: boolean // 未填写视为未收藏，兼容旧配置
   sourceUrl: string
   targetUrl: string
+  requestHeaders?: HeaderSetting[]
+  responseHeaders?: HeaderSetting[]
   groupId: string
   type: 'rule' // 类型标识，用于区分 group 和 rule
 }

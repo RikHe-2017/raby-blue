@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   findResponseTarget,
+  findProxyMatch,
   getEnabledProxyRules,
   getFulfillmentHeaders,
   getReplacementRequestHeaders,
@@ -44,6 +45,18 @@ test('regex captures, target dollar signs, invalid regex and invalid protocols',
     findResponseTarget(rule.sourceUrl, [{ ...rule, targetUrl: 'javascript:alert(1)' }]),
     undefined
   )
+})
+
+test('an omitted target preserves the complete original URL instead of only the captured suffix', () => {
+  for (const targetUrl of ['', '  ']) {
+    for (const sourceUrl of ['http://remote/app/', '^http://remote/(.*)$']) {
+      const input = { ...rule, sourceUrl, targetUrl }
+      const url = 'http://remote/app/list?q=1'
+      assert.deepEqual(findProxyMatch(url, [input]), { rule: input, target: url })
+      assert.equal(findResponseTarget(url, [input]), undefined)
+    }
+  }
+  assert.equal(findProxyMatch(rule.sourceUrl, [{ ...rule, targetUrl: 'not-a-url' }]), undefined)
 })
 
 test('request headers preserve API authorization, content type and range without original cookies', () => {

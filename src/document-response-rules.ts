@@ -15,15 +15,30 @@ export function buildSourcePattern(source: string): string {
 }
 
 export function findResponseTarget(url: string, rules: ProxyRule[]): string | undefined {
+  return findResponseMatch(url, rules)?.target
+}
+
+export function findResponseMatch(
+  url: string,
+  rules: ProxyRule[]
+): { rule: ProxyRule; target: string } | undefined {
+  const match = findProxyMatch(url, rules)
+  return match && new URL(match.target).href !== url ? match : undefined
+}
+
+export function findProxyMatch(
+  url: string,
+  rules: ProxyRule[]
+): { rule: ProxyRule; target: string } | undefined {
   for (const rule of rules) {
-    if (!rule.sourceUrl || !rule.targetUrl) continue
+    if (!rule.sourceUrl) continue
     try {
       const match = new RegExp(buildSourcePattern(rule.sourceUrl), 'i').exec(url)
       if (!match) continue
-      const target = rule.targetUrl + (match[1] ?? '')
+      const targetPrefix = rule.targetUrl.trim()
+      const target = targetPrefix ? targetPrefix + (match[1] ?? '') : url
       const parsed = new URL(target)
-      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && target !== url)
-        return target
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return { rule, target }
     } catch {
       continue
     }

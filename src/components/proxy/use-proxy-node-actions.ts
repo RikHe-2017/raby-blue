@@ -53,6 +53,8 @@ export function useProxyNodeActions(emit: ProxyNodeActionEmitter) {
     const duplicatedRule: ProxyRule = {
       id: crypto.randomUUID(),
       name: `${ruleData.name} - 副本`,
+      requestHeaders: ruleData.requestHeaders?.map(row => ({ ...row, id: crypto.randomUUID() })),
+      responseHeaders: ruleData.responseHeaders?.map(row => ({ ...row, id: crypto.randomUUID() })),
       sourceUrl: ruleData.sourceUrl || '',
       targetUrl: ruleData.targetUrl || '',
       enabled: false,

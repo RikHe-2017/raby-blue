@@ -14,6 +14,7 @@
     "test:proxy-sidebar": "node --experimental-strip-types --test src/components/proxy/sidebar-projections.test.mjs src/stores/proxy-rules.test.mjs",
     "test:user-preferences": "node --experimental-strip-types --test src/stores/user-preferences.test.mjs",
     "test:document-response": "node --experimental-strip-types --test src/document-response.test.mjs src/response-connection.test.mjs src/proxy-strategies.test.mjs",
+    "test:proxy-headers": "node --experimental-strip-types --test src/proxy/header-settings.test.mjs src/components/proxy/header-drafts.test.mjs",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
     "lint:check": "eslint . --ext .vue,.js,.ts,.jsx,.tsx",
     "format": "prettier --write .",

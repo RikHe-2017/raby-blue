@@ -85,11 +85,16 @@ export function buildRedirectRules(config: StrategyConfig): chrome.declarativeNe
   if (!resourceTypes.length) return []
   return config.rules.map((rule, index) => ({
     id: index + 1,
-    priority: 1,
-    action: {
-      type: 'redirect' as chrome.declarativeNetRequest.RuleActionType,
-      redirect: { regexSubstitution: rule.targetUrl + '\\1' }
-    },
+    priority: config.rules.length - index,
+    action:
+      !rule.targetUrl.trim() || rule.sourceUrl === rule.targetUrl.trim()
+        ? {
+            type: 'allow' as chrome.declarativeNetRequest.RuleActionType
+          }
+        : {
+            type: 'redirect' as chrome.declarativeNetRequest.RuleActionType,
+            redirect: { regexSubstitution: rule.targetUrl.trim() + '\\1' }
+          },
     condition: {
       regexFilter: buildSourcePattern(rule.sourceUrl),
       resourceTypes: [...resourceTypes]

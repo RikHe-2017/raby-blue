@@ -71,6 +71,36 @@ const scripts = {
   ]
 }
 
+test('头设置跟随导出导入且同名代理保留本地设置，非法头配置在文件边界被拒绝', () => {
+  const settings = [{ id: 'header', enabled: true, name: 'X-Test', value: 'local' }]
+  const current = proxy([
+    { ...rule('r', '代理', 'g'), requestHeaders: settings, responseHeaders: [] }
+  ])
+  const incoming = proxy([
+    { ...rule('remote', '代理', 'g'), requestHeaders: [{ ...settings[0], value: 'remote' }] }
+  ])
+  const backup = createBackup('proxy', current, scripts, 'now')
+  const parsed = parseBackup(JSON.stringify(backup))
+  assert.deepEqual(parsed.proxyConfig.groups[0].children[0].requestHeaders, settings)
+  parsed.proxyConfig.groups[0].children[0].requestHeaders[0].value = 'copy'
+  assert.equal(settings[0].value, 'local')
+  const merged = applyBackup(
+    { proxyConfig: current, scriptConfig: scripts },
+    { version: '1.0.0', proxyConfig: incoming },
+    'merge'
+  )
+  assert.equal(merged.proxyConfig.groups[0].children[0].requestHeaders[0].value, 'local')
+  for (const headers of [
+    [{ ...settings[0], name: 'bad name' }],
+    [{ ...settings[0], value: 'bad\r\nvalue' }],
+    {},
+    null
+  ]) {
+    const invalid = proxy([{ ...rule('r', '代理', 'g'), requestHeaders: headers }])
+    assert.throws(() => parseBackup(JSON.stringify({ version: '1.0.0', proxyConfig: invalid })))
+  }
+})
+
 test('三个导出范围只包含选中的数据，且输出与输入不共享对象', () => {
   const local = proxy([rule('r', '代理', 'g')])
   for (const scope of ['proxy', 'script', 'all']) {

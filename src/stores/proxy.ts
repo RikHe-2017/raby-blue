@@ -13,6 +13,7 @@ const storage = createStorageAdapter()
 export const useProxyStore = defineStore('proxy', () => {
   const config = ref<ProxyConfig>(DEFAULT_PROXY_CONFIG)
   const userPreferences = useUserPreferencesStore()
+  let saveQueue: Promise<void> = Promise.resolve()
 
   const enabled = computed(() => config.value.enabled)
   const groups = computed(() => config.value.groups)
@@ -94,11 +95,18 @@ export const useProxyStore = defineStore('proxy', () => {
     }
   }
 
-  const updateRule = (ruleId: string, changes: ProxyRuleChanges) => {
+  const updateRule = async (ruleId: string, changes: ProxyRuleChanges) => {
     const groups = updateProxyRule(config.value.groups, ruleId, changes)
     if (groups === config.value.groups) return
+    const previous = config.value
     config.value = { ...config.value, groups }
-    saveConfig()
+    const applied = config.value
+    try {
+      await saveConfig()
+    } catch (error) {
+      if (config.value === applied) config.value = previous
+      throw error
+    }
   }
 
   const setFavorite = async (nodeId: string, favorite: boolean) => {
@@ -125,7 +133,10 @@ export const useProxyStore = defineStore('proxy', () => {
   }
 
   const saveConfig = async () => {
-    await storage.set('proxyConfig', config.value)
+    const snapshot = JSON.parse(JSON.stringify(config.value)) as ProxyConfig
+    const operation = saveQueue.catch(() => {}).then(() => storage.set('proxyConfig', snapshot))
+    saveQueue = operation
+    await operation
   }
 
   const loadConfig = async () => {

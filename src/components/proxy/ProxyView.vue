@@ -6,6 +6,7 @@
   import { useProxyStore } from '../../stores/proxy'
   import type { ProxyGroup, ProxyRule, ProxyNode } from '../../types/proxy'
   import { isProxyGroup, isProxyRule } from '../../types/proxy'
+  import { createHeaderDrafts } from './header-drafts'
 
   const proxyStore = useProxyStore()
   const configLoaded = ref(false)
@@ -57,6 +58,30 @@
     const rule = group.children.find(node => isProxyRule(node) && node.id === activeItemId.value)
     return rule && isProxyRule(rule) ? rule : null
   })
+
+  const findRule = (nodes: ProxyNode[], id: string): ProxyRule | undefined => {
+    for (const node of nodes) {
+      if (isProxyRule(node) && node.id === id) return node
+      if (isProxyGroup(node)) {
+        const found = findRule(node.children, id)
+        if (found) return found
+      }
+    }
+    return undefined
+  }
+  const headerDrafts = createHeaderDrafts(id => findRule(groups.value, id), proxyStore.updateRule)
+  const requestHeaderDraft = computed(() =>
+    activeRule.value ? headerDrafts.get(activeRule.value.id, 'requestHeaders') : null
+  )
+  const responseHeaderDraft = computed(() =>
+    activeRule.value ? headerDrafts.get(activeRule.value.id, 'responseHeaders') : null
+  )
+  watch(
+    () => activeRule.value?.id,
+    () => {
+      void headerDrafts.flush().catch(() => {})
+    }
+  )
 
   // 递归查找第一个被启用的代理规则
   const findFirstEnabledRule = (
@@ -139,6 +164,8 @@
   })
 
   onUnmounted(() => {
+    void headerDrafts.flush().catch(() => {})
+    headerDrafts.dispose()
     // 清理定时器
     if (nameSaveTimer) {
       clearTimeout(nameSaveTimer)
@@ -155,8 +182,17 @@
 
   // 监听活动项目变化
   watch(
-    [activeGroup, activeRule],
-    ([group, rule]) => {
+    [
+      () => activeGroup.value?.id,
+      () => activeGroup.value?.name,
+      () => activeRule.value?.id,
+      () => activeRule.value?.name,
+      () => activeRule.value?.sourceUrl,
+      () => activeRule.value?.targetUrl
+    ],
+    () => {
+      const group = activeGroup.value
+      const rule = activeRule.value
       savePendingConfig()
 
       if (isActiveGroup.value && group) {
@@ -279,6 +315,7 @@
   }
 
   const flushPendingChanges = async () => {
+    await headerDrafts.flush()
     if (!nameSaveTimer && !pendingConfigSave) return
 
     if (nameSaveTimer) {
@@ -318,6 +355,18 @@
           :active-item-name="activeItemName"
           :source-url="sourceUrl"
           :target-url="targetUrl"
+          :request-headers="requestHeaderDraft?.rows ?? []"
+          :response-headers="responseHeaderDraft?.rows ?? []"
+          :is-request-headers-saved="requestHeaderDraft?.saved ?? true"
+          :is-response-headers-saved="responseHeaderDraft?.saved ?? true"
+          :request-headers-error="requestHeaderDraft?.error ?? ''"
+          :response-headers-error="responseHeaderDraft?.error ?? ''"
+          @update:request-headers="
+            rows => activeRule && headerDrafts.change(activeRule.id, 'requestHeaders', rows)
+          "
+          @update:response-headers="
+            rows => activeRule && headerDrafts.change(activeRule.id, 'responseHeaders', rows)
+          "
           :is-name-saved="isNameSaved"
           :is-config-saved="isConfigSaved"
           @update:active-item-name="val => (activeItemName = val)"

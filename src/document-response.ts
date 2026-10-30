@@ -1,17 +1,27 @@
 import type { ProxyRule } from './types/proxy'
 import {
-  findResponseTarget,
   getFulfillmentHeaders,
   getReplacementRequestHeaders,
   getReplacementRequestBody
 } from './document-response-rules.ts'
 import { getRequestType, getResponsePatterns } from './proxy/request-policy.ts'
 import type { RequestType } from './proxy/ProxyStrategy'
+import {
+  hasHeaderSettings,
+  mergeHeaderSettings,
+  validateHeaderSettings
+} from './proxy/header-settings.ts'
+import { getProxyRequestOwner } from './proxy/request-ownership.ts'
+import type { ProxyRequestOwner } from './proxy/request-ownership'
 
 interface PausedRequest {
   requestId: string
   resourceType: string
   networkId?: string
+  responseStatusCode?: number
+  responseStatusText?: string
+  responseErrorReason?: string
+  responseHeaders?: { name: string; value: string }[]
   request: {
     url: string
     method: string
@@ -33,8 +43,31 @@ export function createResponseReplacement() {
   const pending = new Map<number, Set<AbortController>>()
   const errors = new Map<number, string>()
   const sessions = new Map<string, Session>()
+  const networkRequests = new Map<string, ProxyRequestOwner>()
+  const requestOwners = new Map<
+    string,
+    { owner: ProxyRequestOwner; networkId?: string; rewrittenDocument: boolean }
+  >()
+  let headerRules: ProxyRule[] = []
+  const networkKey = (session: Session, id: string) =>
+    `${session.tabId}:${session.sessionId ?? ''}:${id}`
+  const clearRedirects = (tabId?: number) => {
+    for (const key of networkRequests.keys())
+      if (tabId === undefined || key.startsWith(`${tabId}:`)) networkRequests.delete(key)
+    for (const key of requestOwners.keys())
+      if (tabId === undefined || key.startsWith(`${tabId}:`)) requestOwners.delete(key)
+  }
+  const interceptionPatterns = () => {
+    const patterns = getResponsePatterns(resourceTypes)
+    if (!headerRules.length) return patterns
+    return ['http://*', 'https://*'].flatMap(urlPattern => [
+      { urlPattern, requestStage: 'Request' },
+      { urlPattern, requestStage: 'Response' }
+    ])
+  }
 
   const forgetSessions = (tabId: number) => {
+    clearRedirects(tabId)
     for (const [key, session] of sessions) if (session.tabId === tabId) sessions.delete(key)
   }
 
@@ -53,8 +86,9 @@ export function createResponseReplacement() {
   }
 
   const enableSession = async (session: Session) => {
+    if (headerRules.length) await chrome.debugger.sendCommand(session, 'Network.enable')
     await chrome.debugger.sendCommand(session, 'Fetch.enable', {
-      patterns: getResponsePatterns(resourceTypes)
+      patterns: interceptionPatterns()
     })
     sessions.set(`${session.tabId}:${session.sessionId ?? ''}`, session)
     await chrome.debugger.sendCommand(session, 'Target.setAutoAttach', {
@@ -110,13 +144,104 @@ export function createResponseReplacement() {
   const handleRequest = async (session: Session, event: PausedRequest) => {
     const tabId = session.tabId
     if (tabId === undefined) return
-    const target = resourceTypes.includes(getRequestType(event.resourceType))
-      ? findResponseTarget(event.request.url, rules)
-      : undefined
-    if (!target) {
-      await chrome.debugger.sendCommand(session, 'Fetch.continueRequest', {
-        requestId: event.requestId
+    const requestKey = networkKey(session, event.requestId)
+    if (event.responseStatusCode !== undefined || event.responseErrorReason) {
+      const binding = requestOwners.get(requestKey)
+      requestOwners.delete(requestKey)
+      if (!binding) {
+        await chrome.debugger.sendCommand(session, 'Fetch.continueRequest', {
+          requestId: event.requestId
+        })
+        return
+      }
+      const { rule } = binding.owner
+      if (event.responseErrorReason) {
+        await showError(tabId, `目标请求加载失败：${event.responseErrorReason}`)
+        await chrome.debugger.sendCommand(session, 'Fetch.continueRequest', {
+          requestId: event.requestId
+        })
+        return
+      }
+      const status = event.responseStatusCode!
+      const redirects =
+        status >= 300 &&
+        status < 400 &&
+        (event.responseHeaders ?? []).some(header => header.name.toLowerCase() === 'location')
+      if (redirects && binding.rewrittenDocument && rule.requestHeaders?.some(row => row.enabled)) {
+        await showError(tabId, '已配置请求头时请填写不再跳转的最终目标地址')
+        await chrome.debugger.sendCommand(session, 'Fetch.failRequest', {
+          requestId: event.requestId,
+          errorReason: 'Failed'
+        })
+        return
+      }
+      const overrides = rule.responseHeaders?.some(row => row.enabled)
+      await chrome.debugger.sendCommand(session, 'Fetch.continueResponse', {
+        requestId: event.requestId,
+        ...(overrides
+          ? {
+              responseCode: status,
+              ...(event.responseStatusText ? { responsePhrase: event.responseStatusText } : {}),
+              responseHeaders: mergeHeaderSettings(
+                (event.responseHeaders ?? []).map(({ name, value }) => [name, value]),
+                rule.responseHeaders
+              ).map(([name, value]) => ({ name, value }))
+            }
+          : {})
       })
+      await clearError(tabId)
+      return
+    }
+    const networkOwner = event.networkId
+      ? networkRequests.get(networkKey(session, event.networkId))
+      : undefined
+    const owner = getProxyRequestOwner(event.request.url, undefined, rules, networkOwner)
+    const match =
+      owner &&
+      owner.target !== event.request.url &&
+      resourceTypes.includes(getRequestType(event.resourceType))
+        ? owner
+        : undefined
+    if (
+      owner &&
+      (hasHeaderSettings(owner.rule) || (!!match && event.resourceType === 'Document'))
+    ) {
+      requestOwners.set(requestKey, {
+        owner,
+        networkId: event.networkId,
+        rewrittenDocument: !!match && event.resourceType === 'Document'
+      })
+      if (headerRules.length && event.networkId && !networkOwner)
+        networkRequests.set(networkKey(session, event.networkId), owner)
+    }
+    const requestHeaders = owner?.rule.requestHeaders?.some(row => row.enabled)
+      ? {
+          headers: mergeHeaderSettings(
+            Object.entries(event.request.headers),
+            owner.rule.requestHeaders
+          ).map(([name, value]) => ({ name, value }))
+        }
+      : {}
+    if (!match) {
+      await chrome.debugger.sendCommand(session, 'Fetch.continueRequest', {
+        requestId: event.requestId,
+        ...requestHeaders
+      })
+      return
+    }
+    if (event.resourceType === 'Document') {
+      // Keep document loading in the browser to retain its network security metadata.
+      try {
+        await chrome.debugger.sendCommand(session, 'Fetch.continueRequest', {
+          requestId: event.requestId,
+          url: match.target,
+          interceptResponse: true,
+          ...requestHeaders
+        })
+      } catch (error) {
+        requestOwners.delete(requestKey)
+        throw error
+      }
       return
     }
     const controller = new AbortController()
@@ -136,13 +261,18 @@ export function createResponseReplacement() {
         body = result.postData
       }
       const method = event.request.method
-      const response = await fetch(target, {
+      const response = await fetch(match.target, {
         method,
-        headers: getReplacementRequestHeaders(event.request.headers),
+        headers: Object.fromEntries(
+          mergeHeaderSettings(
+            Object.entries(getReplacementRequestHeaders(event.request.headers)),
+            match.rule.requestHeaders
+          )
+        ),
         body: method === 'GET' || method === 'HEAD' ? undefined : body,
         credentials: 'omit',
         cache: 'no-store',
-        redirect: 'follow',
+        redirect: match.rule.requestHeaders?.some(row => row.enabled) ? 'error' : 'follow',
         signal: controller.signal
       })
       const bytes = new Uint8Array(await response.arrayBuffer())
@@ -153,13 +283,18 @@ export function createResponseReplacement() {
       await chrome.debugger.sendCommand(session, 'Fetch.fulfillRequest', {
         requestId: event.requestId,
         responseCode: response.status,
-        responseHeaders: getFulfillmentHeaders([...response.headers.entries()]),
+        responseHeaders: getFulfillmentHeaders(
+          mergeHeaderSettings([...response.headers.entries()], match.rule.responseHeaders)
+        ),
         body: btoa(binary)
       })
       await clearError(tabId)
     } catch (error) {
       if (attached.has(tabId) && rules.length) {
-        await showError(tabId, `目标请求读取失败：${String(error)}`)
+        const headerHint = match.rule.requestHeaders?.some(row => row.enabled)
+          ? '；已配置请求头时请填写不再跳转的最终目标地址'
+          : ''
+        await showError(tabId, `目标请求读取失败：${String(error)}${headerHint}`)
         await chrome.debugger
           .sendCommand(session, 'Fetch.failRequest', {
             requestId: event.requestId,
@@ -175,10 +310,49 @@ export function createResponseReplacement() {
   }
 
   chrome.debugger.onEvent.addListener((session, method, params) => {
-    if (method === 'Fetch.requestPaused') {
-      void handleRequest(session, params as PausedRequest).catch(error =>
-        console.error('Response interception:', error)
+    if (method === 'Network.requestWillBeSent') {
+      const event = params as {
+        requestId: string
+        request: { url: string }
+        redirectResponse?: { url: string }
+      }
+      const key = networkKey(session, event.requestId)
+      const owner = getProxyRequestOwner(
+        event.request.url,
+        event.redirectResponse?.url,
+        rules,
+        networkRequests.get(key)
       )
+      if (owner) networkRequests.set(key, owner)
+      else networkRequests.delete(key)
+    } else if (method === 'Network.loadingFinished' || method === 'Network.loadingFailed') {
+      const networkId = (params as { requestId: string }).requestId
+      networkRequests.delete(networkKey(session, networkId))
+      for (const [key, binding] of requestOwners) {
+        if (
+          key.startsWith(`${session.tabId}:${session.sessionId ?? ''}:`) &&
+          binding.networkId === networkId
+        ) {
+          requestOwners.delete(key)
+          if (method === 'Network.loadingFailed' && binding.rewrittenDocument)
+            void showError(
+              session.tabId!,
+              `目标文档加载失败：${(params as { errorText: string }).errorText}`
+            )
+        }
+      }
+    } else if (method === 'Fetch.requestPaused') {
+      void handleRequest(session, params as PausedRequest).catch(async error => {
+        requestOwners.delete(networkKey(session, (params as PausedRequest).requestId))
+        if (session.tabId !== undefined)
+          await showError(session.tabId, `头设置或响应替换失败：${String(error)}`).catch(() => {})
+        await chrome.debugger
+          .sendCommand(session, 'Fetch.failRequest', {
+            requestId: (params as PausedRequest).requestId,
+            errorReason: 'Failed'
+          })
+          .catch(() => {})
+      })
     } else if (method === 'Target.attachedToTarget') {
       const child = params as { sessionId: string }
       const target = { ...session, sessionId: child.sessionId }
@@ -190,6 +364,10 @@ export function createResponseReplacement() {
     } else if (method === 'Target.detachedFromTarget') {
       const child = params as { sessionId: string }
       sessions.delete(`${session.tabId}:${child.sessionId}`)
+      const prefix = `${session.tabId}:${child.sessionId}:`
+      for (const key of networkRequests.keys())
+        if (key.startsWith(prefix)) networkRequests.delete(key)
+      for (const key of requestOwners.keys()) if (key.startsWith(prefix)) requestOwners.delete(key)
     }
   })
 
@@ -250,17 +428,37 @@ export function createResponseReplacement() {
 
   return {
     async update(nextRules: ProxyRule[], nextTypes: RequestType[] = ['document']) {
-      const patterns = getResponsePatterns(nextTypes)
-      const scopeChanged = JSON.stringify(resourceTypes) !== JSON.stringify(nextTypes)
-      const mappings = (items: ProxyRule[]) => items.map(rule => [rule.sourceUrl, rule.targetUrl])
+      getResponsePatterns(nextTypes)
+      for (const rule of nextRules) {
+        validateHeaderSettings(rule.requestHeaders, 'request')
+        validateHeaderSettings(rule.responseHeaders, 'response')
+      }
+      const nextHeaderRules = nextRules.filter(hasHeaderSettings)
+      const scopeChanged =
+        JSON.stringify(resourceTypes) !== JSON.stringify(nextTypes) ||
+        !!headerRules.length !== !!nextHeaderRules.length
+      const mappings = (items: ProxyRule[]) =>
+        items.map(rule => [
+          rule.sourceUrl,
+          rule.targetUrl,
+          rule.requestHeaders,
+          rule.responseHeaders
+        ])
       if (scopeChanged || JSON.stringify(mappings(rules)) !== JSON.stringify(mappings(nextRules)))
         pending.forEach(requests => requests.forEach(controller => controller.abort()))
       resourceTypes = [...nextTypes]
-      rules = nextTypes.length ? nextRules : []
+      headerRules = nextHeaderRules
+      rules = nextTypes.length || headerRules.length ? nextRules : []
+      if (!rules.length || scopeChanged) clearRedirects()
       dismissed.clear()
       if (scopeChanged && rules.length)
-        for (const session of sessions.values())
-          await chrome.debugger.sendCommand(session, 'Fetch.enable', { patterns })
+        for (const session of sessions.values()) {
+          if (headerRules.length) await chrome.debugger.sendCommand(session, 'Network.enable')
+          else await chrome.debugger.sendCommand(session, 'Network.disable')
+          await chrome.debugger.sendCommand(session, 'Fetch.enable', {
+            patterns: interceptionPatterns()
+          })
+        }
       const tabs = await chrome.tabs.query({})
       for (const tab of tabs) {
         if (tab.id === undefined) continue

@@ -81,6 +81,28 @@ test('unsupported response types are rejected rather than silently misrouted', (
   )
 })
 
+test('same-address rules keep requests on their URL and preserve precedence over later redirects', () => {
+  const same = { ...rule, targetUrl: rule.sourceUrl }
+  const generated = buildRedirectRules({ rules: [same, rule], resourceTypes: ['xmlhttprequest'] })
+  assert.equal(generated[0].action.type, 'allow')
+  assert.equal(generated[0].action.redirect, undefined)
+  assert.ok(generated[0].priority > generated[1].priority)
+  assert.equal(generated[1].action.type, 'redirect')
+})
+
+test('an empty target does not create a redirect or fall through to a lower priority mapping', () => {
+  for (const targetUrl of ['', '  ']) {
+    const generated = buildRedirectRules({
+      rules: [{ ...rule, targetUrl }, rule],
+      resourceTypes: ['xmlhttprequest']
+    })
+    assert.equal(generated[0].action.type, 'allow')
+    assert.equal(generated[0].action.redirect, undefined)
+    assert.ok(generated[0].priority > generated[1].priority)
+    assert.equal(generated[1].action.type, 'redirect')
+  }
+})
+
 const proxyConfig = { enabled: true, groups: [{ type: 'group', children: [rule] }] }
 const strategyFixture = () => {
   const calls = []
