@@ -2,15 +2,18 @@ import { defineManifest } from '@crxjs/vite-plugin'
 
 export default defineManifest(({ command }) => ({
   manifest_version: 3,
+  minimum_chrome_version: '125',
   name: command === 'serve' ? 'RabyBlue Dev' : 'RabyBlue',
   version: '1.0.0',
-  description: 'A browser extension to redirect requests to different URLs',
+  description: 'Proxy requests with redirects and response replacement',
   permissions: [
     'storage',
     'declarativeNetRequest',
     'declarativeNetRequestWithHostAccess',
     'declarativeNetRequestFeedback',
     'scripting',
+    'debugger',
+    'webNavigation',
     'tabs'
   ],
   host_permissions: ['<all_urls>'],
