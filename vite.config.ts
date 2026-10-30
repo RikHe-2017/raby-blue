@@ -9,16 +9,19 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import Icons from 'unplugin-icons/vite'
 import IconsResolver from 'unplugin-icons/resolver'
 import manifest from './manifest.config'
+import { crxHmrCompatibility } from './scripts/vite/crx-hmr-compat'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const pathSrc = resolve(__dirname, 'src')
+const liveReload = true
 
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => ({
   plugins: [
-    crx({ manifest }),
+    crx({ manifest, liveReload }),
+    crxHmrCompatibility(liveReload),
     vue(),
     AutoImport({
       // Auto import functions from Vue, e.g. ref, reactive, toRef...
