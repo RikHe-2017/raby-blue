@@ -1,20 +1,36 @@
 {
   "name": "RabyBlue",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Browser request proxy and JavaScript script manager built with Vue 3 and Manifest V3",
+  "author": "RikHe",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RikHe-2017/raby-blue.git"
+  },
+  "homepage": "https://github.com/RikHe-2017/raby-blue#readme",
+  "bugs": {
+    "url": "https://github.com/RikHe-2017/raby-blue/issues"
+  },
   "type": "module",
+  "engines": {
+    "node": ">=22.21.1"
+  },
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:typecheck": "vue-tsc --noEmit -p tsconfig.test.json",
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "build:dev": "vue-tsc -b && vite build --mode development",
     "build:extension": "npm run build && node scripts/build-extension.js",
     "preview": "vite preview",
     "generate-icons": "node scripts/generate-icons.js",
-    "test:config-transfer": "node --experimental-strip-types --test src/components/config-transfer/transfer.test.mjs",
-    "test:proxy-sidebar": "node --experimental-strip-types --test src/components/proxy/sidebar-projections.test.mjs src/stores/proxy-rules.test.mjs",
-    "test:user-preferences": "node --experimental-strip-types --test src/stores/user-preferences.test.mjs",
-    "test:document-response": "node --experimental-strip-types --test src/document-response.test.mjs src/response-connection.test.mjs src/proxy-strategies.test.mjs",
-    "test:proxy-headers": "node --experimental-strip-types --test src/proxy/header-settings.test.mjs src/components/proxy/header-drafts.test.mjs",
+    "test:config-transfer": "vitest run src/components/config-transfer/transfer.test.ts",
+    "test:proxy-sidebar": "vitest run src/components/proxy/sidebar-projections.test.ts src/stores/proxy-rules.test.ts",
+    "test:user-preferences": "vitest run src/stores/user-preferences.test.ts",
+    "test:document-response": "vitest run src/document-response.test.ts src/response-connection.test.ts src/proxy-strategies.test.ts src/debugger-cancellation.test.ts",
+    "test:proxy-headers": "vitest run src/proxy/header-settings.test.ts src/components/proxy/header-drafts.test.ts",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
     "lint:check": "eslint . --ext .vue,.js,.ts,.jsx,.tsx",
     "format": "prettier --write .",
@@ -59,6 +75,7 @@
     "unplugin-icons": "^22.5.0",
     "unplugin-vue-components": "^30.0.0",
     "vite": "^6.3.5",
+    "vitest": "^5.0.5",
     "vue-tsc": "^2.2.8"
   }
 }

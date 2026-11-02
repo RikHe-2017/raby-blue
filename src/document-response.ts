@@ -56,6 +56,25 @@ class InterceptionEnded extends Error {}
 export function createResponseReplacement(notifications?: ProxySuccessObserver) {
   let rules: ProxyRule[] = []
   let resourceTypes: RequestType[] = []
+  let debuggingCancelled = false
+  let connectionRevision = 0
+  let pauseWrites: Promise<void> = Promise.resolve()
+  const pauseKey = 'proxyDebuggerPaused'
+  const pauseReady = chrome.storage.session
+    .get(pauseKey)
+    .then(value => {
+      if (connectionRevision === 0) debuggingCancelled = value[pauseKey] === true
+    })
+    .catch(error => {
+      if (connectionRevision === 0) debuggingCancelled = true
+      logError('读取调试连接暂停状态失败，请重新启用代理:', error)
+    })
+  const savePause = (paused: boolean) => {
+    pauseWrites = pauseWrites
+      .catch(() => {})
+      .then(() => chrome.storage.session.set({ [pauseKey]: paused }))
+    return pauseWrites
+  }
   const attached = new Set<number>()
   const connecting = new Map<number, Promise<void>>()
   const dismissed = new Set<number>()
@@ -84,6 +103,7 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
     session.tabId !== undefined &&
     attached.has(session.tabId) &&
     sessions.get(sessionKey(session)) === session &&
+    !debuggingCancelled &&
     !!rules.length
   const isCurrentOperation = (operation: PausedOperation) =>
     isCurrentSession(operation.session) &&
@@ -219,17 +239,31 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
   }
 
   const attach = async (tabId: number) => {
-    if (!rules.length || attached.has(tabId) || dismissed.has(tabId)) return
-    if (connecting.has(tabId)) return connecting.get(tabId)
+    await pauseReady
+    if (!rules.length || debuggingCancelled || attached.has(tabId) || dismissed.has(tabId)) return
+    const revision = connectionRevision
+    const existing = connecting.get(tabId)
+    if (existing) {
+      await existing
+      if (revision === connectionRevision) return attach(tabId)
+      return
+    }
     const connection = (async () => {
       try {
         const tab = await chrome.tabs.get(tabId)
-        if (!/^https?:\/\//.test(tab.url ?? '') || !rules.length) return
+        if (
+          !/^https?:\/\//.test(tab.url ?? '') ||
+          !rules.length ||
+          debuggingCancelled ||
+          revision !== connectionRevision
+        )
+          return
         await chrome.debugger.attach({ tabId }, '1.3')
         attached.add(tabId)
-        if (!rules.length) return await detach(tabId)
+        if (!rules.length || debuggingCancelled || revision !== connectionRevision)
+          return await detach(tabId)
         await enableSession({ tabId })
-        await clearError(tabId)
+        if (!debuggingCancelled && revision === connectionRevision) await clearError(tabId)
       } catch (error) {
         await detach(tabId)
         if (
@@ -249,7 +283,7 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
     try {
       await connection
     } finally {
-      connecting.delete(tabId)
+      if (connecting.get(tabId) === connection) connecting.delete(tabId)
     }
   }
 
@@ -588,18 +622,30 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
   })
 
   chrome.debugger.onDetach.addListener((session, reason) => {
-    if (session.tabId === undefined || !attached.delete(session.tabId)) return
+    if (
+      session.tabId === undefined ||
+      (!attached.delete(session.tabId) && !connecting.has(session.tabId))
+    )
+      return
+    if (reason === 'canceled_by_user' && rules.length && !debuggingCancelled) {
+      debuggingCancelled = true
+      connectionRevision++
+      void savePause(true).catch(error => logError('保存调试连接暂停状态失败:', error))
+    }
     logWarn('Response replacement detached:', { tabId: session.tabId, reason })
     pending.get(session.tabId)?.forEach(controller => controller.abort())
     pending.delete(session.tabId)
     forgetSessions(session.tabId)
     dismissed.add(session.tabId)
     if (rules.length && reason !== 'target_closed')
-      void showError(session.tabId, '请求替换已断开，刷新页面将重试；如仍失败，请重新启用代理')
+      void showError(
+        session.tabId,
+        '调试连接已取消，请关闭并重新开启代理总控以恢复文档替换和头设置'
+      )
   })
 
   const reconnectOnNavigation = async (tabId: number) => {
-    if (!rules.length) return
+    if (!rules.length || debuggingCancelled) return
     dismissed.delete(tabId)
     if (attached.has(tabId)) {
       try {
@@ -644,6 +690,7 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
 
   return {
     async update(nextRules: ProxyRule[], nextTypes: RequestType[] = ['document']) {
+      await pauseReady
       getResponsePatterns(nextTypes)
       for (const rule of nextRules) {
         validateHeaderSettings(rule.requestHeaders, 'request')
@@ -668,9 +715,18 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
       resourceTypes = [...nextTypes]
       observeLoading = nextObserveLoading
       headerRules = nextHeaderRules
+      const wasEnabled = !!rules.length
       rules = nextTypes.length || headerRules.length ? nextRules : []
+      if (!rules.length) {
+        debuggingCancelled = false
+        connectionRevision++
+        await savePause(false)
+      } else if (!wasEnabled) {
+        connectionRevision++
+      }
+      const revision = connectionRevision
       if (!rules.length || scopeChanged) clearRedirects()
-      dismissed.clear()
+      if (!debuggingCancelled) dismissed.clear()
       if (scopeChanged && rules.length)
         for (const session of sessions.values()) {
           if (!isCurrentSession(session) || unsupportedSessions.has(session)) continue
@@ -693,6 +749,7 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
         }
       const tabs = await chrome.tabs.query({})
       for (const tab of tabs) {
+        if (revision !== connectionRevision || (rules.length && debuggingCancelled)) break
         if (tab.id === undefined) continue
         if (rules.length && /^https?:\/\//.test(tab.url ?? '')) await attach(tab.id)
         else await detach(tab.id)

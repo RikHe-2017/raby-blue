@@ -1,24 +1,38 @@
-import assert from 'node:assert/strict'
-import test from 'node:test'
+import { requireValue } from './test-utils/fixtures'
+import { expect, test, vi } from 'vitest'
 import { createResponseReplacement } from './document-response.ts'
 import { ResponseProxy } from './proxy/ResponseProxy.ts'
-
-const event = () => {
-  const listeners = []
-  return {
-    addListener: listener => listeners.push(listener),
-    emit: (...args) => listeners.forEach(listener => listener(...args))
-  }
-}
+import type { ProxyRule } from './types/proxy'
+import { createTestEvent as event } from './test-utils/fixtures'
+import type { DebugCommand, DebugSession } from './test-utils/fixtures'
 const settle = async () => {
   for (let count = 0; count < 8; count++) await new Promise(resolve => setImmediate(resolve))
 }
-const rules = [
-  { id: 'r', enabled: true, sourceUrl: 'http://example.test/', targetUrl: 'http://localhost:8098/' }
+const rules: ProxyRule[] = [
+  {
+    id: 'r',
+    name: 'test',
+    type: 'rule' as const,
+    groupId: 'g',
+    enabled: true,
+    sourceUrl: 'http://example.test/',
+    targetUrl: 'http://localhost:8098/'
+  }
 ]
-
+interface BrowserState {
+  connected: boolean
+  attachCount: number
+  commands: DebugCommand[]
+  badges: {
+    tabId: number
+    text: string
+  }[]
+  url: string
+  onAttach?: () => void | Promise<void>
+  onCommand?: (session: DebugSession, method: string, params: DebugCommand['params']) => unknown
+}
 function browserFixture() {
-  const state = {
+  const state: BrowserState = {
     connected: false,
     attachCount: 0,
     commands: [],
@@ -26,6 +40,14 @@ function browserFixture() {
     url: 'http://example.test/'
   }
   const chrome = {
+    storage: {
+      session: {
+        async get() {
+          return {}
+        },
+        async set() {}
+      }
+    },
     debugger: {
       onEvent: event(),
       onDetach: event(),
@@ -37,14 +59,14 @@ function browserFixture() {
       async detach() {
         state.connected = false
       },
-      async sendCommand(session, method, params) {
+      async sendCommand(session: DebugSession, method: string, params: DebugCommand['params']) {
         if (!state.connected) throw new Error('Debugger is not attached')
         state.commands.push({ session, method, params })
         return state.onCommand?.(session, method, params)
       }
     },
     action: {
-      async setBadgeText(value) {
+      async setBadgeText(value: { tabId: number; text: string }) {
         state.badges.push(value)
       },
       async setBadgeBackgroundColor() {},
@@ -54,7 +76,7 @@ function browserFixture() {
     tabs: {
       onUpdated: event(),
       onRemoved: event(),
-      async get(id) {
+      async get(id: number) {
         return { id, url: state.url }
       },
       async query() {
@@ -64,14 +86,13 @@ function browserFixture() {
   }
   return { chrome, state }
 }
-
 test('success notifications wait for applied response and completed loading, never network failure', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
-    const started = []
-    const completed = []
+    const started: [number, string][] = []
+    const completed: string[] = []
     const driver = createResponseReplacement({
       begin(tabId, rule) {
         started.push([tabId, rule.id])
@@ -87,19 +108,19 @@ test('success notifications wait for applied response and completed loading, nev
     }
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', paused)
     await settle()
-    assert.equal(started.length, 1)
-    assert.deepEqual(completed, [])
+    expect(started.length).toBe(1)
+    expect(completed).toStrictEqual([])
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
       ...paused,
       responseStatusCode: 200,
       responseHeaders: []
     })
     await settle()
-    assert.deepEqual(completed, [], 'receiving response headers is not completed loading')
+    expect(completed, 'receiving response headers is not completed loading').toStrictEqual([])
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Network.loadingFinished', {
       requestId: paused.networkId
     })
-    assert.deepEqual(completed, ['r'])
+    expect(completed).toStrictEqual(['r'])
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
       ...paused,
       requestId: 'failed',
@@ -117,17 +138,16 @@ test('success notifications wait for applied response and completed loading, nev
       requestId: 'net-failed',
       errorText: 'aborted'
     })
-    assert.deepEqual(completed, ['r'])
+    expect(completed).toStrictEqual(['r'])
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
 test('source headers do not depend on Network event order or an optional network ID', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     for (const targetUrl of ['', rules[0].sourceUrl]) {
@@ -164,12 +184,11 @@ test('source headers do not depend on Network event order or an optional network
           fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', paused)
           await settle()
           const sent = fixture.state.commands.find(item => item.method === 'Fetch.continueRequest')
-          assert.equal(
-            sent.params.headers?.find(row => row.name === 'X-Label')?.value,
-            headerFields === 'response' ? undefined : 'configured'
-          )
-          assert.equal(sent.params.url, undefined)
-          assert.equal(sent.params.postData, undefined)
+          expect(
+            requireValue(sent).params.headers?.find(row => row.name === 'X-Label')?.value
+          ).toBe(headerFields === 'response' ? undefined : 'configured')
+          expect(requireValue(sent).params.url).toBe(undefined)
+          expect(requireValue(sent).params.postData).toBe(undefined)
           if (networkId)
             fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Network.requestWillBeSent', {
               requestId: networkId,
@@ -184,11 +203,14 @@ test('source headers do not depend on Network event order or an optional network
           const received = fixture.state.commands.find(
             item => item.method === 'Fetch.continueResponse'
           )
-          assert.ok(received, 'continue native response, never refetch or reconstruct its body')
-          assert.equal(
-            received.params.responseHeaders?.find(row => row.name === 'X-Reply')?.value,
-            headerFields === 'request' ? undefined : 'configured'
-          )
+          expect(
+            received,
+            'continue native response, never refetch or reconstruct its body'
+          ).toBeTruthy()
+          expect(
+            requireValue(received).params.responseHeaders?.find(row => row.name === 'X-Reply')
+              ?.value
+          ).toBe(headerFields === 'request' ? undefined : 'configured')
           if (networkId)
             fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Network.loadingFinished', {
               requestId: networkId
@@ -198,15 +220,14 @@ test('source headers do not depend on Network event order or an optional network
     }
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('expired interception IDs do not set an error badge or receive a second terminal command', async t => {
-  t.mock.method(console, 'log', () => {})
+test('expired interception IDs do not set an error badge or receive a second terminal command', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     await driver.update(rules)
@@ -222,26 +243,19 @@ test('expired interception IDs do not set an error badge or receive a second ter
       request: { url: 'http://example.test/a.js', method: 'GET', headers: {} }
     })
     await settle()
-    assert.equal(
-      fixture.state.commands.some(item => item.method === 'Fetch.failRequest'),
-      false
-    )
-    assert.equal(
-      fixture.state.badges.some(item => item.text === '!'),
-      false
-    )
-    assert.equal(console.log.mock.callCount(), 0)
+    expect(fixture.state.commands.some(item => item.method === 'Fetch.failRequest')).toBe(false)
+    expect(fixture.state.badges.some(item => item.text === '!')).toBe(false)
+    expect(vi.mocked(console.log).mock.calls.length).toBe(0)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('detached and foreign sessions cannot process late interception events', async t => {
-  t.mock.method(console, 'log', () => {})
+test('detached and foreign sessions cannot process late interception events', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     await driver.update(rules)
@@ -257,23 +271,22 @@ test('detached and foreign sessions cannot process late interception events', as
       })
     }
     await settle()
-    assert.deepEqual(fixture.state.commands, [])
-    assert.deepEqual(fixture.state.badges, [])
+    expect(fixture.state.commands).toStrictEqual([])
+    expect(fixture.state.badges).toStrictEqual([])
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('duplicate in-flight pause events have one command and stale rejections cannot fail a new session', async t => {
-  t.mock.method(console, 'log', () => {})
+test('duplicate in-flight pause events have one command and stale rejections cannot fail a new session', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     await driver.update(rules)
-    let rejectCommand
+    let rejectCommand!: (error: Error) => void
     fixture.state.onCommand = (_session, method) =>
       method === 'Fetch.continueRequest'
         ? new Promise((_resolve, reject) => {
@@ -288,35 +301,27 @@ test('duplicate in-flight pause events have one command and stale rejections can
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', pause)
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', pause)
     await settle()
-    assert.equal(
-      fixture.state.commands.filter(item => item.method === 'Fetch.continueRequest').length,
-      1
-    )
+    expect(
+      fixture.state.commands.filter(item => item.method === 'Fetch.continueRequest').length
+    ).toBe(1)
     fixture.chrome.debugger.onDetach.emit({ tabId: 1 }, 'target_closed')
     fixture.state.onCommand = undefined
     await driver.update(rules)
     fixture.state.badges.length = 0
     rejectCommand(new Error('old session failed'))
     await settle()
-    assert.equal(
-      fixture.state.commands.some(item => item.method === 'Fetch.failRequest'),
-      false
-    )
-    assert.equal(
-      fixture.state.badges.some(item => item.text === '!'),
-      false
-    )
+    expect(fixture.state.commands.some(item => item.method === 'Fetch.failRequest')).toBe(false)
+    expect(fixture.state.badges.some(item => item.text === '!')).toBe(false)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('unsupported child Fetch capability is resumed and not retried during configuration changes', async t => {
-  t.mock.method(console, 'log', () => {})
+test('unsupported child Fetch capability is resumed and not retried during configuration changes', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     await driver.update(rules)
@@ -333,37 +338,35 @@ test('unsupported child Fetch capability is resumed and not retried during confi
     await driver.update([
       { ...rules[0], requestHeaders: [{ id: 'h', enabled: true, name: 'X-Test', value: 'yes' }] }
     ])
-    assert.equal(
+    expect(
       fixture.state.commands.filter(
         item => item.session.sessionId === 'worker' && item.method === 'Fetch.enable'
-      ).length,
-      1
-    )
-    assert.ok(
+      ).length
+    ).toBe(1)
+    expect(
       fixture.state.commands.some(
         item =>
           item.session.sessionId === 'worker' && item.method === 'Runtime.runIfWaitingForDebugger'
       )
-    )
-    assert.equal(console.log.mock.callCount(), 0)
+    ).toBeTruthy()
+    expect(vi.mocked(console.log).mock.calls.length).toBe(0)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('child detachment during initialization cannot register a stale session', async t => {
-  t.mock.method(console, 'log', () => {})
+test('child detachment during initialization cannot register a stale session', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     await driver.update(rules)
-    let finishEnable
+    let finishEnable!: () => void
     fixture.state.onCommand = (session, method) =>
       session.sessionId === 'frame' && method === 'Fetch.enable'
-        ? new Promise(resolve => {
+        ? new Promise<void>(resolve => {
             finishEnable = resolve
           })
         : undefined
@@ -383,22 +386,18 @@ test('child detachment during initialization cannot register a stale session', a
     await driver.update([
       { ...rules[0], requestHeaders: [{ id: 'h', enabled: true, name: 'X-Test', value: 'yes' }] }
     ])
-    assert.equal(
-      fixture.state.commands.some(item => item.session.sessionId === 'frame'),
-      false
-    )
+    expect(fixture.state.commands.some(item => item.session.sessionId === 'frame')).toBe(false)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('restricted current tab is skipped even when a navigation or tab snapshot says HTTP', async t => {
-  t.mock.method(console, 'log', () => {})
+test('restricted current tab is skipped even when a navigation or tab snapshot says HTTP', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   fixture.state.url = 'chrome://extensions/'
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     await driver.update(rules)
@@ -408,51 +407,43 @@ test('restricted current tab is skipped even when a navigation or tab snapshot s
       url: 'http://example.test/'
     })
     await settle()
-    assert.equal(fixture.state.attachCount, 0)
-    assert.equal(
-      fixture.state.badges.some(item => item.text === '!'),
-      false
-    )
+    expect(fixture.state.attachCount).toBe(0)
+    expect(fixture.state.badges.some(item => item.text === '!')).toBe(false)
     fixture.state.url = 'http://example.test/'
     fixture.chrome.tabs.onUpdated.emit(1, { url: fixture.state.url }, { url: fixture.state.url })
     await settle()
-    assert.equal(fixture.state.attachCount, 1)
+    expect(fixture.state.attachCount).toBe(1)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('restricted navigation race does not dismiss future valid connections', async t => {
-  t.mock.method(console, 'log', () => {})
+test('restricted navigation race does not dismiss future valid connections', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     fixture.state.onAttach = () => {
       throw new Error('Cannot access a chrome:// URL')
     }
     await driver.update(rules)
-    assert.equal(
-      fixture.state.badges.some(item => item.text === '!'),
-      false
-    )
+    expect(fixture.state.badges.some(item => item.text === '!')).toBe(false)
     fixture.state.onAttach = undefined
     fixture.chrome.tabs.onUpdated.emit(1, { status: 'complete' }, { url: fixture.state.url })
     await settle()
-    assert.equal(fixture.state.attachCount, 1)
+    expect(fixture.state.attachCount).toBe(1)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('real header command failures remain visible and fail the paused request once', async t => {
-  t.mock.method(console, 'log', () => {})
+test('real header command failures remain visible and fail the paused request once', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     await driver.update(rules)
@@ -465,25 +456,20 @@ test('real header command failures remain visible and fail the paused request on
       request: { url: 'http://example.test/a.js', headers: {} }
     })
     await settle()
-    assert.equal(
-      fixture.state.badges.some(item => item.text === '!'),
-      true
-    )
-    assert.equal(
-      fixture.state.commands.filter(item => item.method === 'Fetch.failRequest').length,
+    expect(fixture.state.badges.some(item => item.text === '!')).toBe(true)
+    expect(fixture.state.commands.filter(item => item.method === 'Fetch.failRequest').length).toBe(
       1
     )
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('cancelled native loading does not produce a false document failure', async t => {
-  t.mock.method(console, 'log', () => {})
+test('cancelled native loading does not produce a false document failure', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     await driver.update(rules)
@@ -502,22 +488,18 @@ test('cancelled native loading does not produce a false document failure', async
       errorText: 'net::ERR_ABORTED'
     })
     await settle()
-    assert.equal(
-      fixture.state.badges.some(item => item.text === '!'),
-      false
-    )
-    assert.equal(console.log.mock.callCount(), 0)
+    expect(fixture.state.badges.some(item => item.text === '!')).toBe(false)
+    expect(vi.mocked(console.log).mock.calls.length).toBe(0)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
-test('an unexpected child initialization error remains visible but does not leave the child paused', async t => {
-  t.mock.method(console, 'log', () => {})
+test('an unexpected child initialization error remains visible but does not leave the child paused', async () => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     await driver.update(rules)
@@ -531,25 +513,23 @@ test('an unexpected child initialization error remains visible but does not leav
       waitingForDebugger: true
     })
     await settle()
-    assert.equal(console.log.mock.callCount(), 1)
-    assert.equal(console.log.mock.calls[0].arguments[0], '[error]:')
-    assert.equal(
+    expect(vi.mocked(console.log).mock.calls.length).toBe(1)
+    expect(vi.mocked(console.log).mock.calls[0][0]).toBe('[error]:')
+    expect(
       fixture.state.commands.filter(
         item =>
           item.session.sessionId === 'frame' && item.method === 'Runtime.runIfWaitingForDebugger'
-      ).length,
-      1
-    )
+      ).length
+    ).toBe(1)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
 test('response headers use the request-bound source rule even after a configuration update', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     const rule = {
@@ -582,21 +562,21 @@ test('response headers use the request-bound source rule even after a configurat
       responseHeaders: []
     })
     await settle()
-    assert.equal(
-      fixture.state.commands.find(item => item.method === 'Fetch.continueResponse').params
-        .responseHeaders[0].value,
-      'old'
-    )
+    expect(
+      requireValue(
+        requireValue(fixture.state.commands.find(item => item.method === 'Fetch.continueResponse'))
+          .params.responseHeaders
+      )[0].value
+    ).toBe('old')
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
 test('native redirect binds the source rule before target metadata and does not rematch the destination', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const driver = createResponseReplacement()
     const sourceRule = {
@@ -625,11 +605,12 @@ test('native redirect binds the source rule before target metadata and does not 
     const paused = { requestId: 'redirected', networkId: 'net', resourceType: 'XHR', request }
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', paused)
     await settle()
-    assert.equal(
-      fixture.state.commands.find(item => item.method === 'Fetch.continueRequest').params.headers[0]
-        .value,
-      'source'
-    )
+    expect(
+      requireValue(
+        requireValue(fixture.state.commands.find(item => item.method === 'Fetch.continueRequest'))
+          .params.headers
+      )[0].value
+    ).toBe('source')
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Network.requestWillBeSent', {
       requestId: 'net',
       request,
@@ -641,28 +622,30 @@ test('native redirect binds the source rule before target metadata and does not 
       responseHeaders: []
     })
     await settle()
-    assert.equal(
-      fixture.state.commands.find(item => item.method === 'Fetch.continueResponse').params
-        .responseHeaders[0].value,
-      'source'
-    )
+    expect(
+      requireValue(
+        requireValue(fixture.state.commands.find(item => item.method === 'Fetch.continueResponse'))
+          .params.responseHeaders
+      )[0].value
+    ).toBe('source')
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
       ...paused,
       requestId: 'direct',
       networkId: undefined
     })
     await settle()
-    assert.equal(
-      fixture.state.commands.filter(item => item.method === 'Fetch.continueRequest').at(-1).params
-        .headers[0].value,
-      'destination'
-    )
+    expect(
+      requireValue(
+        requireValue(
+          fixture.state.commands.filter(item => item.method === 'Fetch.continueRequest').at(-1)
+        ).params.headers
+      )[0].value
+    ).toBe('destination')
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
 test('completed, failed and detached sessions cannot leak source ownership into later requests', async () => {
   const previous = globalThis.chrome
   try {
@@ -673,7 +656,7 @@ test('completed, failed and detached sessions cannot leak source ownership into 
       'disable'
     ]) {
       const fixture = browserFixture()
-      globalThis.chrome = fixture.chrome
+      vi.stubGlobal('chrome', fixture.chrome)
       const driver = createResponseReplacement()
       const rule = {
         ...rules[0],
@@ -715,25 +698,24 @@ test('completed, failed and detached sessions cannot leak source ownership into 
       })
       await settle()
       const sent = fixture.state.commands.find(item => item.method === 'Fetch.continueRequest')
-      if (cleanup === 'Target.detachedFromTarget') assert.equal(sent, undefined, cleanup)
-      else assert.equal(sent.params.headers, undefined, cleanup)
+      if (cleanup === 'Target.detachedFromTarget') expect(sent, cleanup).toBe(undefined)
+      else expect(requireValue(sent).params.headers, cleanup).toBe(undefined)
       await driver.update([], [])
     }
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
 test('same-address XHR edits both headers without URL rewrite, response replacement or body reconstruction', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
   const originalFetch = globalThis.fetch
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   let fetches = 0
-  globalThis.fetch = async () => {
+  vi.stubGlobal('fetch', async () => {
     fetches++
     return new Response('unexpected')
-  }
+  })
   try {
     const driver = createResponseReplacement()
     await driver.update([
@@ -764,13 +746,13 @@ test('same-address XHR edits both headers without URL rewrite, response replacem
     const sent = fixture.state.commands.find(
       item => item.method === 'Fetch.continueRequest' && item.params.requestId === 'xhr'
     )
-    assert.deepEqual(sent.params.headers, [
+    expect(requireValue(sent).params.headers).toStrictEqual([
       { name: 'X-Original', value: 'keep' },
       { name: 'Cookie', value: 'session=keep' },
       { name: 'X-Label', value: 'xianghe11' }
     ])
-    assert.equal(sent.params.url, undefined)
-    assert.equal(sent.params.postData, undefined)
+    expect(requireValue(sent).params.url).toBe(undefined)
+    expect(requireValue(sent).params.postData).toBe(undefined)
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
       requestId: 'xhr',
       networkId: 'net',
@@ -786,26 +768,22 @@ test('same-address XHR edits both headers without URL rewrite, response replacem
     const received = fixture.state.commands.find(
       item => item.method === 'Fetch.continueResponse' && item.params.requestId === 'xhr'
     )
-    assert.deepEqual(received.params.responseHeaders, [
+    expect(requireValue(received).params.responseHeaders).toStrictEqual([
       { name: 'Content-Encoding', value: 'gzip' },
       { name: 'X-Reply', value: 'configured' }
     ])
-    assert.equal(fetches, 0)
-    assert.equal(
-      fixture.state.commands.some(item => item.method === 'Fetch.fulfillRequest'),
-      false
-    )
+    expect(fetches).toBe(0)
+    expect(fixture.state.commands.some(item => item.method === 'Fetch.fulfillRequest')).toBe(false)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
-    globalThis.fetch = originalFetch
+    vi.stubGlobal('chrome', previous)
+    vi.stubGlobal('fetch', originalFetch)
   }
 })
-
-test('manual main-frame navigation reconnects after detach without modifying configuration', async () => {
+test('user cancellation stays paused through main-frame navigation until explicitly re-enabled', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const replacement = new ResponseProxy()
     await replacement.update({ rules, resourceTypes: ['document'] })
@@ -819,10 +797,8 @@ test('manual main-frame navigation reconnects after detach without modifying con
       url: 'http://example.test/frame'
     })
     await settle()
-    assert.equal(
-      fixture.state.attachCount,
-      1,
-      'do not fight cancellation or retry from child frames'
+    expect(fixture.state.attachCount, 'do not fight cancellation or retry from child frames').toBe(
+      1
     )
     fixture.chrome.webNavigation.onBeforeNavigate.emit({
       tabId: 1,
@@ -830,56 +806,58 @@ test('manual main-frame navigation reconnects after detach without modifying con
       url: 'http://example.test/'
     })
     await settle()
-    assert.equal(fixture.state.attachCount, 2, 'explicit navigation must allow reconnect')
-    assert.equal(fixture.state.connected, true)
+    expect(fixture.state.attachCount, 'refreshing must not undo user cancellation').toBe(1)
     await replacement.dispose()
-    assert.equal(fixture.state.connected, false)
+    await replacement.update({ rules, resourceTypes: ['document'] })
+    expect(fixture.state.attachCount, 'explicit off/on restores debugging').toBe(2)
+    expect(fixture.state.connected).toBe(true)
+    await replacement.dispose()
+    expect(fixture.state.connected).toBe(false)
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
 test('response strategy scopes interception and changes patterns on existing connections', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const strategy = new ResponseProxy()
     await strategy.update({ rules, resourceTypes: ['document'] })
-    assert.ok(
-      fixture.state.commands
-        .find(command => command.method === 'Fetch.enable')
-        .params.patterns.every(pattern => pattern.resourceType === 'Document')
-    )
+    expect(
+      requireValue(
+        requireValue(fixture.state.commands.find(command => command.method === 'Fetch.enable'))
+          .params.patterns
+      ).every(pattern => pattern.resourceType === 'Document')
+    ).toBeTruthy()
     fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
       requestId: 'script',
       resourceType: 'Script',
       request: { url: 'http://example.test/a.js' }
     })
     await settle()
-    assert.ok(
+    expect(
       fixture.state.commands.some(
         command =>
           command.method === 'Fetch.continueRequest' && command.params.requestId === 'script'
       )
-    )
+    ).toBeTruthy()
     await strategy.update({ rules, resourceTypes: ['script'] })
-    const patterns = fixture.state.commands
-      .filter(command => command.method === 'Fetch.enable')
-      .at(-1).params.patterns
-    assert.ok(patterns.every(pattern => pattern.resourceType === 'Script'))
-    assert.equal(fixture.state.attachCount, 1)
+    const patterns = requireValue(
+      fixture.state.commands.filter(command => command.method === 'Fetch.enable').at(-1)
+    ).params.patterns
+    expect(requireValue(patterns).every(pattern => pattern.resourceType === 'Script')).toBeTruthy()
+    expect(fixture.state.attachCount).toBe(1)
     await strategy.dispose()
-    assert.equal(fixture.state.connected, false)
+    expect(fixture.state.connected).toBe(false)
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
 test('navigation detects stale cached attachment and reconnects once', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   try {
     const replacement = createResponseReplacement()
     await replacement.update(rules)
@@ -890,30 +868,29 @@ test('navigation detects stale cached attachment and reconnects once', async () 
       url: 'http://example.test/'
     })
     await settle()
-    assert.equal(fixture.state.attachCount, 2)
-    assert.equal(fixture.state.connected, true)
+    expect(fixture.state.attachCount).toBe(2)
+    expect(fixture.state.connected).toBe(true)
     fixture.chrome.webNavigation.onBeforeNavigate.emit({
       tabId: 1,
       frameId: 0,
       url: 'http://example.test/'
     })
     await settle()
-    assert.equal(fixture.state.attachCount, 2, 'healthy connections must not attach again')
+    expect(fixture.state.attachCount, 'healthy connections must not attach again').toBe(2)
   } finally {
-    globalThis.chrome = previous
+    vi.stubGlobal('chrome', previous)
   }
 })
-
 test('document URL rewrite preserves browser-owned POST body and applies configured headers', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
   const previousFetch = globalThis.fetch
-  globalThis.chrome = fixture.chrome
+  vi.stubGlobal('chrome', fixture.chrome)
   let backgroundFetches = 0
-  globalThis.fetch = async () => {
+  vi.stubGlobal('fetch', async () => {
     backgroundFetches++
     return new Response('old replacement')
-  }
+  })
   try {
     const driver = createResponseReplacement()
     await driver.update([
@@ -937,14 +914,16 @@ test('document URL rewrite preserves browser-owned POST body and applies configu
       request
     })
     await settle()
-    assert.equal(backgroundFetches, 0, 'browser must load the target, not extension fetch')
+    expect(backgroundFetches, 'browser must load the target, not extension fetch').toBe(0)
     const command = fixture.state.commands.find(
       item => item.method === 'Fetch.continueRequest' && item.params.requestId === 'document'
     )
-    assert.equal(command.params.url, 'http://localhost:8098/post')
-    assert.equal(command.params.interceptResponse, true)
-    assert.equal(command.params.postData, undefined, 'do not reconstruct or override POST body')
-    assert.deepEqual(command.params.headers, [
+    expect(requireValue(command).params.url).toBe('http://localhost:8098/post')
+    expect(requireValue(command).params.interceptResponse).toBe(true)
+    expect(requireValue(command).params.postData, 'do not reconstruct or override POST body').toBe(
+      undefined
+    )
+    expect(requireValue(command).params.headers).toStrictEqual([
       { name: 'X-Original', value: 'keep' },
       { name: 'X-Test', value: 'configured' }
     ])
@@ -962,27 +941,23 @@ test('document URL rewrite preserves browser-owned POST body and applies configu
     })
     await settle()
     const response = fixture.state.commands.find(item => item.method === 'Fetch.continueResponse')
-    assert.deepEqual(response.params.responseHeaders, [
+    expect(requireValue(response).params.responseHeaders).toStrictEqual([
       { name: 'Content-Encoding', value: 'gzip' },
       { name: 'X-Reply', value: 'configured' }
     ])
-    assert.equal(
-      fixture.state.commands.some(item => item.method === 'Fetch.fulfillRequest'),
-      false
-    )
+    expect(fixture.state.commands.some(item => item.method === 'Fetch.fulfillRequest')).toBe(false)
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
-    globalThis.fetch = previousFetch
+    vi.stubGlobal('chrome', previous)
+    vi.stubGlobal('fetch', previousFetch)
   }
 })
-
 test('rewritten document rejects downstream redirects when request header overrides are enabled', async () => {
   const fixture = browserFixture()
   const previous = globalThis.chrome
   const previousFetch = globalThis.fetch
-  globalThis.chrome = fixture.chrome
-  globalThis.fetch = async () => new Response('old replacement')
+  vi.stubGlobal('chrome', fixture.chrome)
+  vi.stubGlobal('fetch', async () => new Response('old replacement'))
   try {
     const driver = createResponseReplacement()
     await driver.update([
@@ -1008,15 +983,15 @@ test('rewritten document rejects downstream redirects when request header overri
       responseHeaders: [{ name: 'Location', value: 'http://third-party.test/' }]
     })
     await settle()
-    assert.ok(
+    expect(
       fixture.state.commands.some(
         item =>
           item.method === 'Fetch.failRequest' && item.params.requestId === 'redirecting-document'
       )
-    )
+    ).toBeTruthy()
     await driver.update([], [])
   } finally {
-    globalThis.chrome = previous
-    globalThis.fetch = previousFetch
+    vi.stubGlobal('chrome', previous)
+    vi.stubGlobal('fetch', previousFetch)
   }
 })

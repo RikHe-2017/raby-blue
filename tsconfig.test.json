@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "types": ["node", "chrome"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "src/test-utils/**/*.ts",
+    "scripts/vite/**/*.test.ts",
+    "vitest.config.ts",
+    "src/vite-env.d.ts"
+  ],
+  "exclude": []
+}

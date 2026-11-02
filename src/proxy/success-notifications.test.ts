@@ -1,15 +1,20 @@
-import assert from 'node:assert/strict'
-import test from 'node:test'
+import { requireValue } from '../test-utils/fixtures'
+import { expect, test, vi } from 'vitest'
 import { createProxySuccessNotifications } from './success-notifications.ts'
-const event = () => {
-  const listeners = new Set()
-  return {
-    addListener: listener => listeners.add(listener),
-    removeListener: listener => listeners.delete(listener),
-    emit: (...args) => [...listeners].forEach(listener => listener(...args)),
-    get size() {
-      return listeners.size
-    }
+import { createTestEvent as event } from '../test-utils/fixtures'
+type Message = {
+  action: string
+  items: {
+    id: string
+    name: string
+    mapped: boolean
+  }[]
+}
+interface Delivery {
+  tabId: number
+  message: Message
+  options: {
+    documentId: string
   }
 }
 const settle = async () => {
@@ -18,18 +23,17 @@ const settle = async () => {
 const rule = {
   id: 'r',
   name: 'API',
-  type: 'rule',
+  type: 'rule' as const,
   groupId: 'g',
   enabled: true,
   sourceUrl: 'http://source.test/api/',
   targetUrl: 'http://target.test/',
   showSuccessNotification: true
 }
-
 async function fixture() {
-  assert.equal(typeof createProxySuccessNotifications, 'function', 'notification controller exists')
-  const messages = []
-  const injections = []
+  expect(typeof createProxySuccessNotifications, 'notification controller exists').toBe('function')
+  const messages: Delivery[] = []
+  const injections: unknown[] = []
   const chrome = {
     windows: {
       onFocusChanged: event(),
@@ -43,7 +47,13 @@ async function fixture() {
       async query() {
         return [{ id: 10, windowId: 1 }]
       },
-      async sendMessage(tabId, message, options) {
+      async sendMessage(
+        tabId: number,
+        message: Message,
+        options: {
+          documentId: string
+        }
+      ) {
         messages.push({ tabId, message, options })
         return { shown: true }
       }
@@ -63,14 +73,14 @@ async function fixture() {
       onErrorOccurred: event()
     },
     scripting: {
-      async executeScript(options) {
+      async executeScript(options: unknown) {
         injections.push(options)
         return [{ result: true }]
       }
     }
   }
   const previous = globalThis.chrome
-  globalThis.chrome = chrome
+  vi.stubGlobal('chrome', chrome)
   const notifications = createProxySuccessNotifications('data:image/png;base64,fixture-icon')
   await notifications.ready
   notifications.update([rule], ['xmlhttprequest'])
@@ -80,87 +90,79 @@ async function fixture() {
     messages,
     injections,
     restore() {
-      globalThis.chrome = previous
+      vi.stubGlobal('chrome', previous)
     }
   }
 }
-
 test('only successful new active requests notify; one rule per document; no default-off injection', async () => {
   const f = await fixture()
   try {
-    assert.equal(f.notifications.begin(10, { ...rule, showSuccessNotification: false }), undefined)
-    assert.equal(f.notifications.begin(11, rule), undefined)
-    assert.equal(f.injections.length, 0)
+    expect(f.notifications.begin(10, { ...rule, showSuccessNotification: false })).toBe(undefined)
+    expect(f.notifications.begin(11, rule)).toBe(undefined)
+    expect(f.injections.length).toBe(0)
     const done = f.notifications.begin(10, rule)
     await settle()
-    assert.equal(f.messages.length, 0, 'begin/injection alone is not success')
-    done()
+    expect(f.messages.length, 'begin/injection alone is not success').toBe(0)
+    requireValue(done)()
     await settle()
-    assert.equal(f.messages.length, 1)
-    assert.equal(f.messages[0].options.documentId, 'doc1')
-    assert.deepEqual(f.messages[0].message.items, [{ id: 'r', name: 'API', mapped: true }])
+    expect(f.messages.length).toBe(1)
+    expect(f.messages[0].options.documentId).toBe('doc1')
+    expect(f.messages[0].message.items).toStrictEqual([{ id: 'r', name: 'API', mapped: true }])
     f.notifications.begin(10, rule)?.()
     await settle()
-    assert.equal(f.messages.length, 1, 'same rule does not spam the same document')
+    expect(f.messages.length, 'same rule does not spam the same document').toBe(1)
   } finally {
     f.restore()
   }
 })
-
 test('switch-away/back invalidates in-flight results and queued hints; background results never replay', async () => {
   const f = await fixture()
   try {
     const old = f.notifications.begin(10, rule)
     f.chrome.tabs.onActivated.emit({ tabId: 11, windowId: 1 })
-    assert.equal(f.notifications.begin(10, rule), undefined)
+    expect(f.notifications.begin(10, rule)).toBe(undefined)
     f.chrome.tabs.onActivated.emit({ tabId: 10, windowId: 1 })
-    old()
+    requireValue(old)()
     await settle()
-    assert.equal(f.messages.length, 0)
+    expect(f.messages.length).toBe(0)
     f.notifications.begin(10, rule)?.()
     f.chrome.tabs.onActivated.emit({ tabId: 11, windowId: 1 })
     f.chrome.tabs.onActivated.emit({ tabId: 10, windowId: 1 })
     await settle()
-    assert.equal(f.messages.length, 0)
+    expect(f.messages.length).toBe(0)
     f.notifications.begin(10, rule)?.()
     await settle()
-    assert.equal(f.messages.length, 1)
+    expect(f.messages.length).toBe(1)
   } finally {
     f.restore()
   }
 })
-
 test('navigation waits for the new document, rejects old completions, and config disable cancels hints', async () => {
   const f = await fixture()
   try {
     const old = f.notifications.begin(10, rule)
     f.chrome.webNavigation.onBeforeNavigate.emit({ tabId: 10, frameId: 0 })
-    old()
+    requireValue(old)()
     const fresh = f.notifications.begin(10, rule)
-    fresh()
+    requireValue(fresh)()
     await settle()
-    assert.equal(
-      f.messages.length,
-      0,
-      'must not deliver a new document result to the previous page'
-    )
+    expect(f.messages.length, 'must not deliver a new document result to the previous page').toBe(0)
     f.chrome.webNavigation.onCommitted.emit({ tabId: 10, frameId: 0, documentId: 'doc2' })
     await settle()
-    assert.equal(f.messages.length, 1)
-    assert.equal(f.messages[0].options.documentId, 'doc2')
+    expect(f.messages.length).toBe(1)
+    expect(f.messages[0].options.documentId).toBe('doc2')
     f.chrome.webNavigation.onBeforeNavigate.emit({ tabId: 10, frameId: 0 })
     const disabled = f.notifications.begin(10, rule)
     f.notifications.update([], [])
-    disabled()
+    requireValue(disabled)()
     f.chrome.webNavigation.onCommitted.emit({ tabId: 10, frameId: 0, documentId: 'doc3' })
     await settle()
-    assert.equal(f.messages.length, 1)
-    assert.equal(f.chrome.webRequest.onBeforeRequest.size, 0)
+    expect(f.messages.length).toBe(1)
+    expect(f.chrome.webRequest.onBeforeRequest.size).toBe(0)
   } finally {
     f.restore()
   }
 })
-
 test('native redirect success requires observed source-to-target redirect and completion; failure never notifies', async () => {
   const f = await fixture()
   try {
@@ -173,7 +175,7 @@ test('native redirect success requires observed source-to-target redirect and co
     f.chrome.webRequest.onBeforeRequest.emit(start)
     f.chrome.webRequest.onCompleted.emit({ ...start, url: 'http://target.test/save' })
     await settle()
-    assert.equal(f.messages.length, 0, 'a target alone does not prove our redirect was applied')
+    expect(f.messages.length, 'a target alone does not prove our redirect was applied').toBe(0)
     f.chrome.webRequest.onBeforeRequest.emit({ ...start, requestId: '2' })
     f.chrome.webRequest.onBeforeRedirect.emit({
       ...start,
@@ -182,7 +184,7 @@ test('native redirect success requires observed source-to-target redirect and co
     })
     f.chrome.webRequest.onErrorOccurred.emit({ ...start, requestId: '2' })
     await settle()
-    assert.equal(f.messages.length, 0)
+    expect(f.messages.length).toBe(0)
     f.chrome.webRequest.onBeforeRequest.emit({ ...start, requestId: '3' })
     f.chrome.webRequest.onBeforeRedirect.emit({
       ...start,
@@ -195,12 +197,11 @@ test('native redirect success requires observed source-to-target redirect and co
       url: 'http://target.test/save'
     })
     await settle()
-    assert.equal(f.messages.length, 1)
+    expect(f.messages.length).toBe(1)
   } finally {
     f.restore()
   }
 })
-
 test('merge concurrent rules without leaking headers; a failed receiver does not consume document dedupe', async () => {
   const f = await fixture()
   try {
@@ -217,22 +218,21 @@ test('merge concurrent rules without leaking headers; a failed receiver does not
     }
     f.notifications.begin(10, rule)?.()
     await settle()
-    f.chrome.tabs.sendMessage = async (_tab, message) => {
-      f.messages.push(message)
+    f.chrome.tabs.sendMessage = async (tabId, message, options) => {
+      f.messages.push({ tabId, message, options })
       return { shown: true }
     }
     f.notifications.begin(10, rule)?.()
     f.notifications.begin(10, second)?.()
     await settle()
-    assert.equal(f.messages.length, 1)
-    assert.equal(f.messages[0].items.length, 2)
-    assert.equal(f.messages[0].items[1].mapped, false)
-    assert.equal(JSON.stringify(f.messages).includes('SECRET'), false)
+    expect(f.messages.length).toBe(1)
+    expect(f.messages[0].message.items.length).toBe(2)
+    expect(f.messages[0].message.items[1].mapped).toBe(false)
+    expect(JSON.stringify(f.messages).includes('SECRET')).toBe(false)
   } finally {
     f.restore()
   }
 })
-
 test('slow receiver delivery does not duplicate the same rule, and inactive injection can retry later', async () => {
   const f = await fixture()
   try {
@@ -240,10 +240,10 @@ test('slow receiver delivery does not duplicate the same rule, and inactive inje
     f.chrome.scripting.executeScript = async () => [{ result: ++attempts > 1 }]
     f.notifications.begin(10, rule)
     await settle()
-    let release
-    f.chrome.tabs.sendMessage = async (_tab, message) => {
-      f.messages.push(message)
-      await new Promise(resolve => {
+    let release!: () => void
+    f.chrome.tabs.sendMessage = async (tabId, message, options) => {
+      f.messages.push({ tabId, message, options })
+      await new Promise<void>(resolve => {
         release = resolve
       })
       return { shown: true }
@@ -252,19 +252,17 @@ test('slow receiver delivery does not duplicate the same rule, and inactive inje
     await settle()
     f.notifications.begin(10, rule)?.()
     await settle()
-    assert.equal(
+    expect(
       attempts,
-      2,
       'receiver refused a hidden-page install, so retry on the next active request'
-    )
-    assert.equal(f.messages.length, 1, 'one pending delivery per rule')
+    ).toBe(2)
+    expect(f.messages.length, 'one pending delivery per rule').toBe(1)
     release()
     await settle()
   } finally {
     f.restore()
   }
 })
-
 test('a background redirect cannot be rebound to a target rule after activation', async () => {
   const f = await fixture()
   try {
@@ -290,24 +288,23 @@ test('a background redirect cannot be rebound to a target rule after activation'
     f.chrome.webRequest.onBeforeRedirect.emit({ ...target, redirectUrl: 'http://final.test/data' })
     f.chrome.webRequest.onCompleted.emit({ ...target, url: 'http://final.test/data' })
     await settle()
-    assert.equal(f.messages.length, 0)
+    expect(f.messages.length).toBe(0)
   } finally {
     f.restore()
   }
 })
-
 test('disabling then re-enabling a rule cannot resurrect an older in-flight hint', async () => {
   const f = await fixture()
   try {
     const old = f.notifications.begin(10, rule)
     f.notifications.update([], [])
     f.notifications.update([rule], ['xmlhttprequest'])
-    old()
+    requireValue(old)()
     await settle()
-    assert.equal(f.messages.length, 0)
+    expect(f.messages.length).toBe(0)
     f.notifications.begin(10, rule)?.()
     await settle()
-    assert.equal(f.messages.length, 1)
+    expect(f.messages.length).toBe(1)
   } finally {
     f.restore()
   }

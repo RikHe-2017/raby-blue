@@ -16,6 +16,12 @@ dist-extension
 *.zip
 *.crx
 *.pem
+.env
+.env.*
+!.env.example
+proxy-config-*.json
+script-config-*.json
+raby-blue-*.json
 
 # Editor directories and files
 .vscode/*

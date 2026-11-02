@@ -5,6 +5,37 @@ import typescriptParser from '@typescript-eslint/parser'
 import prettier from 'eslint-plugin-prettier'
 
 export default [
+  {
+    ignores: [
+      '**/node_modules/**',
+      'dist/**',
+      'dist-dev/**',
+      'dist-ssr/**',
+      'dist-extension/**',
+      'build/**',
+      '**/*.min.js',
+      '**/*.d.ts',
+      '**/*.map',
+      '**/*.log',
+      'pids/**',
+      '**/*.pid',
+      '**/*.seed',
+      '**/*.pid.lock',
+      'coverage/**',
+      '.vscode/**',
+      '.idea/**',
+      '**/*.swp',
+      '**/*.swo',
+      '**/.DS_Store',
+      '**/.DS_Store?',
+      '**/._*',
+      '.Spotlight-V100/**',
+      '.Trashes/**',
+      '**/ehthumbs.db',
+      '**/Thumbs.db',
+      'public/**'
+    ]
+  },
   ...pluginVue.configs['flat/recommended'],
   {
     files: ['**/*.vue'],
