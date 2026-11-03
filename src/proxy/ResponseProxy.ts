@@ -5,8 +5,8 @@ import type { ProxySuccessObserver } from './success-notifications'
 export class ResponseProxy implements ProxyStrategy {
   private readonly driver: ReturnType<typeof createResponseReplacement>
 
-  constructor(notifications?: ProxySuccessObserver) {
-    this.driver = createResponseReplacement(notifications)
+  constructor(notifications?: ProxySuccessObserver, onUserCancelled?: () => void | Promise<void>) {
+    this.driver = createResponseReplacement(notifications, onUserCancelled)
   }
 
   async update(config: StrategyConfig): Promise<void> {

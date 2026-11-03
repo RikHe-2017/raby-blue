@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, onScopeDispose } from 'vue'
 import type { ProxyConfig, ProxyGroup, ProxyRule } from '../types/proxy'
 import { DEFAULT_PROXY_CONFIG, isProxyGroup, isProxyRule } from '../types/proxy'
 import { createStorageAdapter } from './storage'
@@ -14,13 +14,34 @@ export const useProxyStore = defineStore('proxy', () => {
   const config = ref<ProxyConfig>(DEFAULT_PROXY_CONFIG)
   const userPreferences = useUserPreferencesStore()
   let saveQueue: Promise<void> = Promise.resolve()
+  const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime?.id
+
+  if (isExtension) {
+    const syncGlobalSwitch = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      area: string
+    ) => {
+      const enabled = changes.proxyConfig?.newValue?.enabled
+      if (area === 'local' && typeof enabled === 'boolean' && enabled !== config.value.enabled)
+        config.value = { ...config.value, enabled }
+    }
+    chrome.storage.onChanged.addListener(syncGlobalSwitch)
+    onScopeDispose(() => chrome.storage.onChanged.removeListener(syncGlobalSwitch))
+  }
 
   const enabled = computed(() => config.value.enabled)
   const groups = computed(() => config.value.groups)
 
-  const toggleGlobalProxy = () => {
-    config.value.enabled = !config.value.enabled
-    saveConfig()
+  const toggleGlobalProxy = async () => {
+    config.value = { ...config.value, enabled: !config.value.enabled }
+    try {
+      await saveConfig(true)
+    } catch (error) {
+      const persisted = (await storage.get('proxyConfig').catch(() => undefined)) as
+        ProxyConfig | undefined
+      if (persisted) config.value = { ...config.value, enabled: persisted.enabled }
+      throw error
+    }
   }
 
   /**
@@ -132,9 +153,19 @@ export const useProxyStore = defineStore('proxy', () => {
     }
   }
 
-  const saveConfig = async () => {
+  const saveConfig = async (updateEnabled = false) => {
     const snapshot = JSON.parse(JSON.stringify(config.value)) as ProxyConfig
-    const operation = saveQueue.catch(() => {}).then(() => storage.set('proxyConfig', snapshot))
+    const operation = saveQueue
+      .catch(() => {})
+      .then(async () => {
+        if (!isExtension) return storage.set('proxyConfig', snapshot)
+        const result = (await chrome.runtime.sendMessage({
+          action: 'saveProxyConfig',
+          config: snapshot,
+          updateEnabled
+        })) as { success?: boolean; error?: string } | undefined
+        if (!result?.success) throw new Error(result?.error ?? '保存代理配置失败')
+      })
     saveQueue = operation
     await operation
   }

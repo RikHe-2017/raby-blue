@@ -439,7 +439,7 @@ test('restricted navigation race does not dismiss future valid connections', asy
     vi.stubGlobal('chrome', previous)
   }
 })
-test('real header command failures remain visible and fail the paused request once', async () => {
+test('real header command failures are logged without red badges and fail the paused request once', async () => {
   vi.spyOn(console, 'log').mockImplementation(() => {})
   const fixture = browserFixture()
   const previous = globalThis.chrome
@@ -456,7 +456,13 @@ test('real header command failures remain visible and fail the paused request on
       request: { url: 'http://example.test/a.js', headers: {} }
     })
     await settle()
-    expect(fixture.state.badges.some(item => item.text === '!')).toBe(true)
+    expect(fixture.state.badges.some(item => item.text === '!')).toBe(false)
+    expect(console.log).toHaveBeenCalledWith(
+      '[error]:',
+      'Response replacement:',
+      expect.stringContaining('Invalid header name'),
+      expect.any(Object)
+    )
     expect(fixture.state.commands.filter(item => item.method === 'Fetch.failRequest').length).toBe(
       1
     )

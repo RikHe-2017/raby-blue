@@ -9,6 +9,7 @@ export interface Script {
   type: 'script' // 类型标识，用于区分 group 和 script
   createdAt?: string
   updatedAt?: string
+  favorite?: boolean
 }
 
 export interface ScriptGroup {

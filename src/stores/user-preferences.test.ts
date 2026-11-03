@@ -1,5 +1,39 @@
 import { expect, test } from 'vitest'
 import { normalizeUserPreferences, mergeUserPreferences } from './user-preferences-model.ts'
+test('脚本分区默认全部展开且使用简略收藏，旧偏好无需迁移', () => {
+  const preferences = normalizeUserPreferences({ scriptUIState: { activeItemId: 'old' } })
+  expect(preferences.scriptSidebar).toEqual({
+    favoritesGrouped: false,
+    openPanels: ['favorites', 'config'],
+    favoritesExpandedKeys: []
+  })
+  expect(preferences.scriptUIState.activeItemId).toBe('old')
+})
+
+test('脚本全收起及收藏树展开状态独立往返，更新代理偏好不能覆盖脚本偏好', () => {
+  const initial = normalizeUserPreferences(undefined)
+  const next = mergeUserPreferences(initial, {
+    scriptSidebar: { openPanels: [], favoritesGrouped: true, favoritesExpandedKeys: ['sg'] },
+    scriptUIState: { expandedKeys: [], activeGroupId: 'sg', activeItemId: 's' }
+  })
+  const reloaded = normalizeUserPreferences(JSON.parse(JSON.stringify(next)))
+  const final = mergeUserPreferences(reloaded, { proxySidebar: { openPanels: [] } })
+  expect(final.scriptSidebar).toEqual({
+    favoritesGrouped: true,
+    openPanels: [],
+    favoritesExpandedKeys: ['sg']
+  })
+  expect(final.scriptUIState).toEqual({ expandedKeys: [], activeGroupId: 'sg', activeItemId: 's' })
+  expect(initial.scriptSidebar.openPanels).toEqual(['favorites', 'config'])
+  expect(
+    normalizeUserPreferences({
+      scriptSidebar: {
+        openPanels: ['config', 'bad', 'config'],
+        favoritesExpandedKeys: ['x', 'x', 1]
+      }
+    }).scriptSidebar
+  ).toEqual({ favoritesGrouped: false, openPanels: ['config'], favoritesExpandedKeys: ['x'] })
+})
 test('统一偏好默认值完整且不读取旧的独立偏好结构', () => {
   const defaults = normalizeUserPreferences(undefined)
   expect(defaults.activeTab).toBe('proxy')

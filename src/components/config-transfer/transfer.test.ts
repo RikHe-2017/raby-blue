@@ -119,6 +119,36 @@ const scripts = {
     }
   ]
 } satisfies ScriptConfig
+test('脚本收藏兼容旧备份，导出覆盖和合并保留收藏，非法收藏值被拒绝', () => {
+  const favoriteScripts: ScriptConfig = {
+    ...scripts,
+    groups: [
+      { ...scripts.groups[0], children: [{ ...scripts.groups[0].children[0], favorite: true }] }
+    ]
+  }
+  const backup = parseBackup(
+    JSON.stringify(createBackup('script', proxy(), favoriteScripts, 'now'))
+  )
+  expect(backup.scriptConfig).toEqual(favoriteScripts)
+  expect(
+    applyBackup({ proxyConfig: proxy(), scriptConfig: scripts }, backup, 'replace').scriptConfig
+  ).toEqual(favoriteScripts)
+  expect(
+    applyBackup(
+      { proxyConfig: proxy(), scriptConfig: favoriteScripts },
+      { version: '1.0.0', scriptConfig: scripts },
+      'merge'
+    ).scriptConfig
+  ).toEqual(favoriteScripts)
+  expect(parseBackup(JSON.stringify({ scriptConfig: scripts })).scriptConfig).toEqual(scripts)
+  for (const favorite of ['true', 1, null]) {
+    const invalid = {
+      ...favoriteScripts,
+      groups: [{ ...scripts.groups[0], children: [{ ...scripts.groups[0].children[0], favorite }] }]
+    }
+    expect(() => parseBackup(JSON.stringify({ scriptConfig: invalid }))).toThrow(/favorite/)
+  }
+})
 test('头设置跟随导出导入且同名代理保留本地设置，非法头配置在文件边界被拒绝', () => {
   const settings = [{ id: 'header', enabled: true, name: 'X-Test', value: 'local' }]
   const current = proxy([

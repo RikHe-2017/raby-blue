@@ -222,8 +222,12 @@
     { immediate: true }
   )
 
-  const handleGlobalProxyToggle = () => {
-    proxyStore.toggleGlobalProxy()
+  const handleGlobalProxyToggle = async () => {
+    try {
+      await proxyStore.toggleGlobalProxy()
+    } catch (error) {
+      ElMessage.error(`代理总控保存失败：${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   const saveSuccessNotification = async (showSuccessNotification: boolean) => {

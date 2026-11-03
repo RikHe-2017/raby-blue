@@ -1,8 +1,10 @@
 <script lang="ts" setup>
+  import { computed } from 'vue'
   import NameEditor from './NameEditor.vue'
   import SaveStatus from '../common/SaveStatus.vue'
   import HeaderSettings from './HeaderSettings.vue'
   import type { HeaderSetting, ProxyRule } from '../../types/proxy'
+  import { isRegexSource } from '../../document-response-rules'
 
   interface Props {
     activeGroupId: string
@@ -31,8 +33,9 @@
     (e: 'update:responseHeaders', value: HeaderSetting[]): void
   }
 
-  defineProps<Props>()
+  const props = defineProps<Props>()
   const emit = defineEmits<Emits>()
+  const sourceIsRegex = computed(() => isRegexSource(props.sourceUrl.trim()))
 </script>
 
 <template>
@@ -72,14 +75,17 @@
       </div>
       <div class="config-section__fields">
         <div class="config-section__field">
-          <label for="proxy-source-url">源地址（匹配规则）</label>
+          <div class="config-section__field-label">
+            <label for="proxy-source-url">源地址（匹配规则）</label>
+            <el-tag v-if="sourceIsRegex" size="small" effect="plain">正则</el-tag>
+          </div>
           <el-input
             id="proxy-source-url"
             :model-value="sourceUrl"
             type="textarea"
             :autosize="{ minRows: 2, maxRows: 4 }"
             resize="none"
-            placeholder="https://example.com/app/"
+            :placeholder="'普通地址：https://example.com/app/\n正则表达式：^https://example\\.com/app/(.*)$'"
             spellcheck="false"
             @update:model-value="val => emit('update:sourceUrl', val)"
           />
@@ -190,6 +196,13 @@
     gap: 8px;
     color: var(--el-text-color-regular);
     font-size: 14px;
+  }
+
+  .config-section__field-label {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .config-section__empty-content {

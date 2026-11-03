@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-  import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
+  import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
   import ScriptSidebar from './ScriptSidebar.vue'
   import ScriptSection from './ScriptSection.vue'
   import { useScriptStore } from '../../stores/script'
@@ -96,14 +96,8 @@
     configLoaded.value = true
   })
 
-  onUnmounted(() => {
-    // 清理定时器
-    if (nameSaveTimer) {
-      clearTimeout(nameSaveTimer)
-    }
-    if (contentSaveTimer) {
-      clearTimeout(contentSaveTimer)
-    }
+  onBeforeUnmount(() => {
+    void flushPendingChanges().catch(() => ElMessage.error('脚本保存失败，请重试'))
   })
 
   // 监听活动项目变化
@@ -145,10 +139,22 @@
     })
   })
 
+  let selectionRevision = 0
+
+  const handleSelectNode = async (node: ScriptNode) => {
+    const revision = ++selectionRevision
+    try {
+      await flushPendingChanges()
+      if (revision !== selectionRevision) return
+      activeGroupId.value = node.type === 'group' ? node.id : node.groupId
+      activeItemId.value = node.id
+    } catch {
+      ElMessage.error('脚本保存失败，请重试')
+    }
+  }
+
   const handleEditScript = (scriptData: ScriptNode) => {
-    if (!isScript(scriptData)) return
-    activeGroupId.value = scriptData.groupId
-    activeItemId.value = scriptData.id
+    if (isScript(scriptData)) void handleSelectNode(scriptData)
   }
 
   // 监听 groups 变化，处理删除后的 UI 状态清理
@@ -177,63 +183,72 @@
   )
 
   const handleSaveItemName = async () => {
-    if (isActiveGroup.value && activeGroupId.value && activeItemName.value.trim()) {
-      scriptStore.updateGroup(activeGroupId.value, { name: activeItemName.value.trim() })
-      isNameSaved.value = true
-    } else if (activeScript.value && activeItemName.value.trim()) {
-      scriptStore.updateScript(activeGroupId.value, activeScript.value.id, {
-        name: activeItemName.value.trim()
-      })
+    const groupId = activeGroupId.value
+    const itemId = activeItemId.value
+    const name = activeItemName.value.trim()
+    if (!name) return
+    if (isActiveGroup.value && groupId) {
+      await scriptStore.updateGroup(groupId, { name })
+    } else if (activeScript.value) {
+      await scriptStore.updateScript(groupId, itemId, { name })
+    }
+    if (activeItemId.value === itemId && activeItemName.value.trim() === name) {
       isNameSaved.value = true
     }
   }
 
   watch(activeItemName, () => {
     if (!activeGroupId.value) return
+    const savedName = isActiveGroup.value ? activeGroup.value?.name : activeScript.value?.name
+    if (activeItemName.value === savedName) return
     isNameSaved.value = false
     if (nameSaveTimer) {
       clearTimeout(nameSaveTimer)
     }
     nameSaveTimer = setTimeout(() => {
       nameSaveTimer = null
-      handleSaveItemName()
+      void handleSaveItemName().catch(() => ElMessage.error('名称保存失败，请重试'))
     }, 500)
   })
 
-  const saveScriptContent = () => {
-    if (activeScript.value) {
-      scriptStore.updateScript(activeGroupId.value, activeScript.value.id, {
-        content: scriptContent.value
-      })
+  const saveScriptContent = async () => {
+    const script = activeScript.value
+    const content = scriptContent.value
+    if (script) {
+      await scriptStore.updateScript(script.groupId, script.id, { content })
+    }
+    if (activeScript.value?.id === script?.id && scriptContent.value === content) {
       isContentSaved.value = true
     }
   }
 
   watch(scriptContent, () => {
     if (!activeScript.value) return
+    if (scriptContent.value === activeScript.value.content) return
     isContentSaved.value = false
     if (contentSaveTimer) {
       clearTimeout(contentSaveTimer)
     }
     contentSaveTimer = setTimeout(() => {
       contentSaveTimer = null
-      saveScriptContent()
+      void saveScriptContent().catch(() => ElMessage.error('脚本内容保存失败，请重试'))
     }, 800)
   })
 
   const flushPendingChanges = async () => {
-    if (!nameSaveTimer && !contentSaveTimer) return
-
+    const saveName = !!nameSaveTimer || !isNameSaved.value
+    const saveContent = !!contentSaveTimer || !isContentSaved.value
     if (nameSaveTimer) {
       clearTimeout(nameSaveTimer)
       nameSaveTimer = null
-      await handleSaveItemName()
     }
     if (contentSaveTimer) {
       clearTimeout(contentSaveTimer)
       contentSaveTimer = null
-      saveScriptContent()
     }
+    const nameSaving = saveName ? handleSaveItemName() : Promise.resolve()
+    const contentSaving = saveContent ? saveScriptContent() : Promise.resolve()
+    await Promise.all([nameSaving, contentSaving])
     await scriptStore.saveConfig()
   }
 
@@ -294,9 +309,9 @@
     <ScriptSidebar
       v-if="configLoaded"
       :groups="groups"
-      :active-group-id="activeGroupId"
-      @update:active-group-id="val => (activeGroupId = val)"
-      @update:active-item-id="val => (activeItemId = val)"
+      :active-item-id="activeItemId"
+      :before-command="flushPendingChanges"
+      @select="handleSelectNode"
       @edit-script="handleEditScript"
     />
 

@@ -77,6 +77,8 @@ function validateConfig(value: unknown, kind: ConfigKind): void {
       ) {
         throw new Error(`代理“${node.name}”的字段不完整或类型错误`)
       }
+    } else if (node.favorite !== undefined && typeof node.favorite !== 'boolean') {
+      throw new Error(`脚本“${node.name}”的 favorite 必须为布尔值`)
     } else if (
       node.type !== 'script' ||
       typeof node.content !== 'string' ||

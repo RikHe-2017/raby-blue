@@ -15,6 +15,13 @@ export interface UserPreferences {
   proxySidebar: SidebarPreferences
   proxyUIState: TreeUIState
   scriptUIState: TreeUIState
+  scriptSidebar: ScriptSidebarPreferences
+}
+
+export interface ScriptSidebarPreferences {
+  favoritesGrouped: boolean
+  openPanels: string[]
+  favoritesExpandedKeys: string[]
 }
 
 export interface UserPreferencesPatch {
@@ -22,6 +29,7 @@ export interface UserPreferencesPatch {
   proxySidebar?: Partial<SidebarPreferences>
   proxyUIState?: Partial<TreeUIState>
   scriptUIState?: Partial<TreeUIState>
+  scriptSidebar?: Partial<ScriptSidebarPreferences>
 }
 
 const record = (value: unknown): Record<string, unknown> =>
@@ -64,11 +72,19 @@ function normalizeTreeState(value: unknown): TreeUIState {
 
 export function normalizeUserPreferences(value: unknown): UserPreferences {
   const saved = record(value)
+  const scriptSidebar = record(saved.scriptSidebar)
   return {
     activeTab: saved.activeTab === 'script' ? 'script' : 'proxy',
     proxySidebar: normalizeSidebarPreferences(saved.proxySidebar),
     proxyUIState: normalizeTreeState(saved.proxyUIState),
-    scriptUIState: normalizeTreeState(saved.scriptUIState)
+    scriptUIState: normalizeTreeState(saved.scriptUIState),
+    scriptSidebar: {
+      favoritesGrouped: scriptSidebar.favoritesGrouped === true,
+      openPanels: Array.isArray(scriptSidebar.openPanels)
+        ? strings(scriptSidebar.openPanels).filter(panel => ['favorites', 'config'].includes(panel))
+        : ['favorites', 'config'],
+      favoritesExpandedKeys: strings(scriptSidebar.favoritesExpandedKeys)
+    }
   }
 }
 
@@ -81,6 +97,7 @@ export function mergeUserPreferences(
     ...patch,
     proxySidebar: { ...current.proxySidebar, ...patch.proxySidebar },
     proxyUIState: { ...current.proxyUIState, ...patch.proxyUIState },
-    scriptUIState: { ...current.scriptUIState, ...patch.scriptUIState }
+    scriptUIState: { ...current.scriptUIState, ...patch.scriptUIState },
+    scriptSidebar: { ...current.scriptSidebar, ...patch.scriptSidebar }
   })
 }

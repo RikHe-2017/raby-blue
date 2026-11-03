@@ -3,6 +3,8 @@ import type { ProxyConfig, ProxyRule } from './types/proxy'
 import {
   findResponseTarget,
   findProxyMatch,
+  isRegexSource,
+  buildSourcePattern,
   getEnabledProxyRules,
   getFulfillmentHeaders,
   getReplacementRequestHeaders,
@@ -17,6 +19,19 @@ const rule: ProxyRule = {
   sourceUrl: 'http://remote/app/',
   targetUrl: 'http://localhost:8098/'
 }
+
+test.each([
+  ['', false],
+  ['https://example.com/app/', false],
+  ['https://example.com/app/?q=one+two', false],
+  ['^https://example\\.com/app/(.*)$', true],
+  ['http://remote/(.*)', true],
+  ['^http://remote/(one|two)/', true]
+] as const)('source %s shares regex-mode detection with URL matching', (source, expected) => {
+  expect(isRegexSource(source)).toBe(expected)
+  if (expected) expect(buildSourcePattern(source)).toBe(source)
+})
+
 test('document requests retain path and query; nonmatches and self-maps are skipped', () => {
   expect(findResponseTarget('http://remote/app/', [rule])).toBe('http://localhost:8098/')
   expect(findResponseTarget('http://remote/app/page?q=1', [rule])).toBe(

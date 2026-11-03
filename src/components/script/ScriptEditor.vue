@@ -40,7 +40,6 @@
   <div class="script-editor">
     <div class="script-editor__header">
       <div class="script-editor__title-wrapper">
-        <el-icon class="script-editor__icon"><i-ep-document /></el-icon>
         <div class="script-editor__title-content">
           <h4>JS 代码编辑器</h4>
           <SaveStatus :is-saved="isSaved" />
@@ -111,11 +110,6 @@
     flex: 1;
   }
 
-  .script-editor__icon {
-    color: var(--el-color-primary);
-    margin-right: 12px;
-  }
-
   .script-editor__title-content {
     margin-right: 12px;
     display: flex;
@@ -131,6 +125,10 @@
   .script-editor__actions {
     display: flex;
     gap: 12px;
+  }
+
+  .script-editor__actions :deep(.el-button + .el-button) {
+    margin-left: 0;
   }
 
   .script-editor__body {

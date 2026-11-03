@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, toRaw } from 'vue'
 import type { ScriptConfig, ScriptGroup, Script } from '../types/script'
-import { DEFAULT_SCRIPT_CONFIG, isScriptGroup, isScript } from '../types/script'
+import { DEFAULT_SCRIPT_CONFIG } from '../types/script'
+import {
+  findScriptNode,
+  insertScriptNode,
+  removeScriptNode,
+  setScriptNodeFavorite,
+  updateScriptNode
+} from './script-tree'
 import { createStorageAdapter } from './storage'
 import { useUserPreferencesStore } from './user-preferences'
 import type { TreeUIState } from './user-preferences-model'
@@ -9,121 +16,99 @@ import type { TreeUIState } from './user-preferences-model'
 const storage = createStorageAdapter()
 
 export const useScriptStore = defineStore('script', () => {
-  const config = ref<ScriptConfig>(DEFAULT_SCRIPT_CONFIG)
+  const config = ref<ScriptConfig>(structuredClone(DEFAULT_SCRIPT_CONFIG))
   const userPreferences = useUserPreferencesStore()
+  let saving: Promise<unknown> = Promise.resolve()
 
   const enabled = computed(() => config.value.enabled)
   const groups = computed(() => config.value.groups)
 
-  const toggleGlobalScript = () => {
-    config.value.enabled = !config.value.enabled
-    saveConfig()
+  const commit = (update: (current: ScriptConfig) => ScriptConfig) => {
+    const operation = saving
+      .catch(() => {})
+      .then(async () => {
+        const next = update(config.value)
+        if (next === config.value) return false
+        await storage.set('scriptConfig', JSON.parse(JSON.stringify(next)))
+        config.value = next
+        return true
+      })
+    saving = operation
+    return operation
   }
 
-  /**
-   * 递归查找分组
-   */
-  const findGroupById = (groups: ScriptGroup[], id: string): ScriptGroup | null => {
-    for (const group of groups) {
-      if (group.id === id) {
-        return group
-      }
-      const childGroups = group.children.filter(isScriptGroup)
-      if (childGroups.length > 0) {
-        const found = findGroupById(childGroups, id)
-        if (found) return found
-      }
-    }
-    return null
-  }
+  const updateGroups = (update: (groups: ScriptGroup[]) => ScriptGroup[]) =>
+    commit(current => {
+      const next = update(current.groups)
+      return next === current.groups ? current : { ...current, groups: next }
+    })
+
+  const toggleGlobalScript = () => commit(current => ({ ...current, enabled: !current.enabled }))
 
   const addGroup = (group: ScriptGroup, parentId?: string) => {
-    if (parentId) {
-      // 添加子分组
-      const parentGroup = findGroupById(config.value.groups, parentId)
-      if (parentGroup) {
-        group.parentId = parentId
-        parentGroup.children.push(group)
-      }
-    } else {
-      // 添加顶级分组
-      config.value.groups.push(group)
-    }
-    saveConfig()
+    const snapshot = structuredClone(toRaw(group))
+    return updateGroups(groups => insertScriptNode(groups, snapshot, parentId))
   }
 
   const updateGroup = (groupId: string, updatedGroup: Partial<ScriptGroup>) => {
-    const group = findGroupById(config.value.groups, groupId)
-    if (group) {
-      Object.assign(group, updatedGroup)
-      saveConfig()
-    }
+    const name = updatedGroup.name
+    return updateGroups(groups =>
+      name !== undefined && findScriptNode(groups, groupId)?.type === 'group'
+        ? updateScriptNode(groups, groupId, { name })
+        : groups
+    )
   }
 
-  const deleteGroup = (groupId: string) => {
-    // 递归删除分组
-    const deleteGroupRecursive = (groups: ScriptGroup[]): ScriptGroup[] => {
-      return groups.filter(group => {
-        if (group.id === groupId) {
-          return false // 删除当前分组
-        }
-        const childGroups = group.children.filter(isScriptGroup)
-        if (childGroups.length > 0) {
-          const filteredChildGroups = deleteGroupRecursive(childGroups)
-          // 保留脚本，只更新子分组
-          const scripts = group.children.filter(isScript)
-          group.children = [...filteredChildGroups, ...scripts]
-        }
-        return true
-      })
-    }
-
-    config.value.groups = deleteGroupRecursive(config.value.groups)
-    saveConfig()
-  }
+  const deleteGroup = (groupId: string) =>
+    updateGroups(groups =>
+      findScriptNode(groups, groupId)?.type === 'group' ? removeScriptNode(groups, groupId) : groups
+    )
 
   const addScript = (groupId: string, script: Script) => {
-    const group = findGroupById(config.value.groups, groupId)
-    if (group) {
-      script.createdAt = new Date().toISOString()
-      script.updatedAt = new Date().toISOString()
-      group.children.push(script)
-      saveConfig()
-    }
+    const now = new Date().toISOString()
+    const snapshot = { ...structuredClone(toRaw(script)), createdAt: now, updatedAt: now }
+    return updateGroups(groups => insertScriptNode(groups, snapshot, groupId))
   }
 
   const updateScript = (groupId: string, scriptId: string, updatedScript: Partial<Script>) => {
-    const group = findGroupById(config.value.groups, groupId)
-    if (group) {
-      const script = group.children.find(
-        (node): node is Script => isScript(node) && node.id === scriptId
-      )
-      if (script) {
-        Object.assign(script, updatedScript, {
-          updatedAt: new Date().toISOString()
-        })
-        saveConfig()
-      }
-    }
+    const snapshot = { ...updatedScript, updatedAt: new Date().toISOString() }
+    return updateGroups(groups => {
+      const script = findScriptNode(groups, scriptId)
+      return script?.type === 'script' && script.groupId === groupId
+        ? updateScriptNode(groups, scriptId, snapshot)
+        : groups
+    })
   }
 
   const deleteScript = (groupId: string, scriptId: string) => {
-    const group = findGroupById(config.value.groups, groupId)
-    if (group) {
-      group.children = group.children.filter(node => !(isScript(node) && node.id === scriptId))
-      saveConfig()
-    }
+    return updateGroups(groups => {
+      const script = findScriptNode(groups, scriptId)
+      return script?.type === 'script' && script.groupId === groupId
+        ? removeScriptNode(groups, scriptId)
+        : groups
+    })
   }
 
-  const saveConfig = async () => {
-    await storage.set('scriptConfig', config.value)
+  const setFavorite = (nodeId: string, favorite: boolean) =>
+    updateGroups(groups => setScriptNodeFavorite(groups, nodeId, favorite))
+
+  const saveConfig = () => {
+    const operation = saving
+      .catch(() => {})
+      .then(() => storage.set('scriptConfig', JSON.parse(JSON.stringify(config.value))))
+    saving = operation
+    return operation
   }
 
-  const loadConfig = async () => {
-    const result = await storage.get('scriptConfig')
-    if (result) {
-      config.value = result
-    }
+  const loadConfig = () => {
+    const operation = saving
+      .catch(() => {})
+      .then(async () => {
+        const result = await storage.get('scriptConfig')
+        if (result) config.value = result
+      })
+    saving = operation
+    return operation
   }
 
   const uiState = computed(() => userPreferences.preferences.scriptUIState)
@@ -145,6 +130,7 @@ export const useScriptStore = defineStore('script', () => {
     addScript,
     updateScript,
     deleteScript,
+    setFavorite,
     saveConfig,
     loadConfig,
     saveUIState,

@@ -34,7 +34,6 @@
   <div class="name-editor">
     <div class="name-editor__header">
       <div class="name-editor__title-wrapper">
-        <el-icon class="name-editor__icon"><i-ep-setting /></el-icon>
         <div class="name-editor__title-content">
           <h4>{{ isActiveGroup ? '分组名称' : '脚本名称' }}</h4>
           <SaveStatus :is-saved="isSaved" />
@@ -84,12 +83,6 @@
     display: flex;
     align-items: center;
     flex: 1;
-    gap: var(--el-component-size-small);
-  }
-
-  .name-editor__icon {
-    color: var(--el-color-primary);
-    margin-top: 2px;
   }
 
   .name-editor__title-content {

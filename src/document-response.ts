@@ -53,28 +53,14 @@ interface PausedOperation {
 
 class InterceptionEnded extends Error {}
 
-export function createResponseReplacement(notifications?: ProxySuccessObserver) {
+export function createResponseReplacement(
+  notifications?: ProxySuccessObserver,
+  onUserCancelled?: () => void | Promise<void>
+) {
   let rules: ProxyRule[] = []
   let resourceTypes: RequestType[] = []
   let debuggingCancelled = false
   let connectionRevision = 0
-  let pauseWrites: Promise<void> = Promise.resolve()
-  const pauseKey = 'proxyDebuggerPaused'
-  const pauseReady = chrome.storage.session
-    .get(pauseKey)
-    .then(value => {
-      if (connectionRevision === 0) debuggingCancelled = value[pauseKey] === true
-    })
-    .catch(error => {
-      if (connectionRevision === 0) debuggingCancelled = true
-      logError('读取调试连接暂停状态失败，请重新启用代理:', error)
-    })
-  const savePause = (paused: boolean) => {
-    pauseWrites = pauseWrites
-      .catch(() => {})
-      .then(() => chrome.storage.session.set({ [pauseKey]: paused }))
-    return pauseWrites
-  }
   const attached = new Set<number>()
   const connecting = new Map<number, Promise<void>>()
   const dismissed = new Set<number>()
@@ -175,8 +161,6 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
   const showError = async (tabId: number, message: string, context?: Record<string, unknown>) => {
     errors.set(tabId, message)
     logError('Response replacement:', message, ...(context ? [context] : []))
-    await chrome.action.setBadgeText({ tabId, text: '!' }).catch(() => {})
-    await chrome.action.setBadgeBackgroundColor({ tabId, color: '#f56c6c' }).catch(() => {})
     await chrome.action.setTitle({ tabId, title: `RabyBlue: ${message}` }).catch(() => {})
   }
 
@@ -239,7 +223,6 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
   }
 
   const attach = async (tabId: number) => {
-    await pauseReady
     if (!rules.length || debuggingCancelled || attached.has(tabId) || dismissed.has(tabId)) return
     const revision = connectionRevision
     const existing = connecting.get(tabId)
@@ -630,18 +613,19 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
     if (reason === 'canceled_by_user' && rules.length && !debuggingCancelled) {
       debuggingCancelled = true
       connectionRevision++
-      void savePause(true).catch(error => logError('保存调试连接暂停状态失败:', error))
+      try {
+        void Promise.resolve(onUserCancelled?.()).catch(error =>
+          logError('用户取消调试后关闭代理总控失败:', error)
+        )
+      } catch (error) {
+        logError('用户取消调试后关闭代理总控失败:', error)
+      }
     }
     logWarn('Response replacement detached:', { tabId: session.tabId, reason })
     pending.get(session.tabId)?.forEach(controller => controller.abort())
     pending.delete(session.tabId)
     forgetSessions(session.tabId)
     dismissed.add(session.tabId)
-    if (rules.length && reason !== 'target_closed')
-      void showError(
-        session.tabId,
-        '调试连接已取消，请关闭并重新开启代理总控以恢复文档替换和头设置'
-      )
   })
 
   const reconnectOnNavigation = async (tabId: number) => {
@@ -690,7 +674,6 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
 
   return {
     async update(nextRules: ProxyRule[], nextTypes: RequestType[] = ['document']) {
-      await pauseReady
       getResponsePatterns(nextTypes)
       for (const rule of nextRules) {
         validateHeaderSettings(rule.requestHeaders, 'request')
@@ -720,7 +703,6 @@ export function createResponseReplacement(notifications?: ProxySuccessObserver) 
       if (!rules.length) {
         debuggingCancelled = false
         connectionRevision++
-        await savePause(false)
       } else if (!wasEnabled) {
         connectionRevision++
       }

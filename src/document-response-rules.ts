@@ -8,8 +8,12 @@ export function getEnabledProxyRules(config: ProxyConfig): ProxyRule[] {
   return config.enabled ? visit(config.groups) : []
 }
 
-export function buildSourcePattern(source: string): string {
+export function isRegexSource(source: string): boolean {
   return /[\\\[\]()*$^|]/.test(source)
+}
+
+export function buildSourcePattern(source: string): string {
+  return isRegexSource(source)
     ? source.replace(/\?\?/g, '\\?\\?')
     : source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(.*)'
 }
