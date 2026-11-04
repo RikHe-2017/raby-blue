@@ -2,7 +2,7 @@ import type { ProxyRule } from '../types/proxy'
 import type { RequestType } from './ProxyStrategy'
 import { findProxyMatch } from '../document-response-rules.ts'
 import { getRedirectResourceTypes } from './request-policy.ts'
-import { installProxySuccessNotification } from '../content/proxy-success-notification.ts'
+import { injectProxySuccessNotification } from '../content/proxy-success-notification.ts'
 
 export interface ProxySuccessObserver {
   begin(tabId: number, rule: ProxyRule): (() => void) | undefined
@@ -12,7 +12,6 @@ interface PageState {
   documentId?: string
   navigating: boolean
   eligible: boolean
-  seen: Set<string>
   pending: Map<string, Ticket>
   delivering: Set<string>
   installing?: Promise<boolean>
@@ -65,7 +64,6 @@ export function createProxySuccessNotifications(iconDataUrl: string) {
       page = {
         navigating: false,
         eligible: false,
-        seen: new Set(),
         pending: new Map(),
         delivering: new Set()
       }
@@ -92,15 +90,11 @@ export function createProxySuccessNotifications(iconDataUrl: string) {
     if (!rules.some(rule => rule.enabled && rule.showSuccessNotification === true))
       return Promise.resolve(false)
     if (!page.installing) {
-      page.installing = chrome.scripting
-        .executeScript({
-          target: { tabId, documentIds: [page.documentId] },
-          func: installProxySuccessNotification,
-          args: [iconDataUrl],
-          injectImmediately: true
-        })
-        .then(results => {
-          const installed = results.some(result => result.result === true)
+      page.installing = injectProxySuccessNotification(
+        { tabId, documentIds: [page.documentId] },
+        iconDataUrl
+      )
+        .then(installed => {
           if (!installed) page.installing = undefined
           return installed
         })
@@ -118,18 +112,13 @@ export function createProxySuccessNotifications(iconDataUrl: string) {
     const tickets = [...page.pending.values()]
     page.pending.clear()
     const fresh = () =>
-      tickets.filter(
-        ticket =>
-          currentRule(ticket) &&
-          !page.seen.has(ticket.ruleId) &&
-          !page.delivering.has(ticket.ruleId)
-      )
+      tickets.filter(ticket => currentRule(ticket) && !page.delivering.has(ticket.ruleId))
     if (!fresh().length || !(await install(tabId, page))) return
     const deliver = fresh()
     if (!deliver.length) return
     for (const ticket of deliver) page.delivering.add(ticket.ruleId)
     try {
-      const result = await chrome.tabs.sendMessage(
+      await chrome.tabs.sendMessage(
         tabId,
         {
           action: 'proxySuccess',
@@ -144,8 +133,6 @@ export function createProxySuccessNotifications(iconDataUrl: string) {
         },
         { documentId: page.documentId }
       )
-      if (result?.shown)
-        for (const ticket of deliver) if (currentRule(ticket)) page.seen.add(ticket.ruleId)
     } catch {
       // Navigation or an unavailable receiver must never affect the actual proxy request.
       page.installing = undefined
@@ -176,7 +163,7 @@ export function createProxySuccessNotifications(iconDataUrl: string) {
     }
     void install(tabId, page)
     return () => {
-      if (!currentRule(ticket) || page.seen.has(rule.id)) return
+      if (!currentRule(ticket)) return
       page.pending.set(rule.id, ticket)
       schedule(tabId, page)
     }

@@ -1,9 +1,48 @@
 import { requireValue } from '../test-utils/fixtures'
 import { expect, test } from 'vitest'
-import { validateHeaderSettings, mergeHeaderSettings } from './header-settings.ts'
+import {
+  createHeaderSetting,
+  validateHeaderSettings,
+  mergeHeaderSettings
+} from './header-settings.ts'
 import { findResponseMatch } from '../document-response-rules.ts'
 import { getProxyRequestOwner } from './request-ownership.ts'
-const row = (name: string, value = '', enabled = true, id = name) => ({ id, name, value, enabled })
+import type { HeaderSetting, HeaderSettingMode } from '../types/proxy'
+
+const row = (name: string, value = '', enabled = true, id = name, mode?: HeaderSettingMode) => ({
+  id,
+  name,
+  value,
+  enabled,
+  ...(mode ? { mode } : {})
+})
+
+test('merge mode preserves all original same-name entries and appends the configured value', () => {
+  const original: [string, string][] = [
+    ['X-Test', 'old'],
+    ['x-test', 'older'],
+    ['Link', 'a']
+  ]
+  const settings = [row('x-Test', 'new', true, 'x-test', 'merge')]
+
+  expect(mergeHeaderSettings(original, settings)).toStrictEqual([
+    ['X-Test', 'old'],
+    ['x-test', 'older'],
+    ['Link', 'a'],
+    ['x-Test', 'new']
+  ])
+})
+
+test('new header settings default to overwrite mode', () => {
+  expect(createHeaderSetting('new-header')).toStrictEqual({
+    id: 'new-header',
+    enabled: true,
+    name: '',
+    value: '',
+    mode: 'overwrite'
+  })
+})
+
 test('setting headers replaces case variants, preserves unrelated duplicates and does not mutate inputs', () => {
   const original: [string, string][] = [
     ['X-Test', 'old'],
@@ -22,6 +61,19 @@ test('setting headers replaces case variants, preserves unrelated duplicates and
   expect({ original, settings }).toStrictEqual(before)
   expect(mergeHeaderSettings(original)).toStrictEqual(original)
 })
+
+test('header setting mode accepts only overwrite or merge', () => {
+  expect(() =>
+    validateHeaderSettings([row('X-Test', 'new', true, 'x-test', 'merge')], 'request')
+  ).not.toThrow()
+  expect(() =>
+    validateHeaderSettings(
+      [{ ...row('X-Test'), mode: 'append' as unknown as HeaderSetting['mode'] }],
+      'request'
+    )
+  ).toThrow()
+})
+
 test('validation rejects duplicate names/IDs, injection, malformed values and protected fields', () => {
   for (const settings of [
     [row('X-Test'), row('x-test')],

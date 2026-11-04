@@ -286,7 +286,7 @@
       proxyStore.updateGroup(activeGroupId.value, { name: activeItemName.value.trim() })
       isNameSaved.value = true
     } else if (activeRule.value && activeItemName.value.trim()) {
-      proxyStore.updateRule(activeRule.value.id, {
+      await proxyStore.updateRule(activeRule.value.id, {
         name: activeItemName.value.trim()
       })
       isNameSaved.value = true
@@ -307,7 +307,9 @@
     // 防抖保存，500ms后保存
     nameSaveTimer = setTimeout(() => {
       nameSaveTimer = null
-      handleSaveItemName()
+      void handleSaveItemName().catch(error =>
+        ElMessage.error(`代理名称保存或应用失败：${String(error)}`)
+      )
     }, 500)
   })
 
@@ -325,10 +327,13 @@
     }
     isConfigSaved.value = false
     pendingConfigSave = () => {
-      proxyStore.updateRule(ruleId, addresses)
-      if (activeGroupId.value === groupId && activeRule.value?.id === ruleId) {
-        isConfigSaved.value = true
-      }
+      void proxyStore
+        .updateRule(ruleId, addresses)
+        .then(() => {
+          if (activeGroupId.value === groupId && activeRule.value?.id === ruleId)
+            isConfigSaved.value = true
+        })
+        .catch(error => ElMessage.error(`代理配置保存或应用失败：${String(error)}`))
     }
 
     if (configSaveTimer) clearTimeout(configSaveTimer)
@@ -367,7 +372,12 @@
 
     <!-- 右侧内容区域 -->
     <div class="proxy-view__content">
-      <ContentHeader :proxy-enabled="proxyEnabled" @toggle-proxy="handleGlobalProxyToggle" />
+      <ContentHeader
+        :proxy-enabled="proxyEnabled"
+        :pending="proxyStore.toggling"
+        :runtime-status="proxyStore.runtimeStatus"
+        @toggle-proxy="handleGlobalProxyToggle"
+      />
 
       <div class="proxy-view__content-body">
         <ConfigSection

@@ -135,3 +135,48 @@ test('unrelated storage changes are ignored and disposing the store removes its 
   f.changed.emit({ proxyConfig: { newValue: { enabled: false } } }, 'local')
   expect(f.store.enabled).toBe(true)
 })
+
+test('runtime failure updates an open popup without replacing selected rules or editor data', async () => {
+  const f = await fixture()
+  try {
+    f.store.groups[0].name = 'unsaved draft'
+    const groups = f.store.groups
+    f.changed.emit(
+      {
+        proxyRuntimeStatus: {
+          newValue: { phase: 'error', message: 'initialization failed', cleanupFailed: true }
+        }
+      },
+      'session'
+    )
+    expect(f.store.runtimeStatus).toMatchObject({ phase: 'error', cleanupFailed: true })
+    expect(f.store.groups).toBe(groups)
+    expect(f.store.groups[0].name).toBe('unsaved draft')
+    expect(f.store.groups[0].children[0].enabled).toBe(true)
+  } finally {
+    f.store.$dispose()
+  }
+})
+
+test('duplicate toggles are ignored while the background is applying a configuration', async () => {
+  const f = await fixture()
+  try {
+    let finish!: (value: { success: boolean }) => void
+    f.sendMessage.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        })
+    )
+    const first = f.store.toggleGlobalProxy()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    expect(f.store.toggling).toBe(true)
+    await f.store.toggleGlobalProxy()
+    expect(f.sendMessage).toHaveBeenCalledTimes(1)
+    finish({ success: true })
+    await first
+    expect(f.store.toggling).toBe(false)
+  } finally {
+    f.store.$dispose()
+  }
+})

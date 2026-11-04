@@ -61,6 +61,8 @@ export function createResponseReplacement(
   let resourceTypes: RequestType[] = []
   let debuggingCancelled = false
   let connectionRevision = 0
+  let scoped = false
+  let activeTabId: number | undefined
   const attached = new Set<number>()
   const connecting = new Map<number, Promise<void>>()
   const dismissed = new Set<number>()
@@ -88,6 +90,7 @@ export function createResponseReplacement(
   const isCurrentSession = (session: Session) =>
     session.tabId !== undefined &&
     attached.has(session.tabId) &&
+    (!scoped || activeTabId === session.tabId) &&
     sessions.get(sessionKey(session)) === session &&
     !debuggingCancelled &&
     !!rules.length
@@ -218,19 +221,29 @@ export function createResponseReplacement(
     pending.get(tabId)?.forEach(controller => controller.abort())
     pending.delete(tabId)
     forgetSessions(tabId)
-    if (attached.delete(tabId)) await chrome.debugger.detach({ tabId }).catch(() => {})
+    if (attached.has(tabId)) {
+      try {
+        await chrome.debugger.detach({ tabId })
+      } catch (error) {
+        if (!isUnavailableDebugTarget(error)) throw error
+      }
+      attached.delete(tabId)
+    }
     await clearError(tabId)
   }
 
-  const attach = async (tabId: number) => {
-    if (!rules.length || debuggingCancelled || attached.has(tabId) || dismissed.has(tabId)) return
+  const attach = async (tabId: number, initializing = false): Promise<void> => {
+    if (!rules.length || debuggingCancelled || (scoped && activeTabId !== tabId)) return
     const revision = connectionRevision
     const existing = connecting.get(tabId)
     if (existing) {
-      await existing
-      if (revision === connectionRevision) return attach(tabId)
+      await existing.catch(error => {
+        if (initializing) throw error
+      })
+      if (revision === connectionRevision) return attach(tabId, initializing)
       return
     }
+    if (attached.has(tabId) || dismissed.has(tabId)) return
     const connection = (async () => {
       try {
         const tab = await chrome.tabs.get(tabId)
@@ -248,7 +261,10 @@ export function createResponseReplacement(
         await enableSession({ tabId })
         if (!debuggingCancelled && revision === connectionRevision) await clearError(tabId)
       } catch (error) {
-        await detach(tabId)
+        await detach(tabId).catch(cleanupError => {
+          logError('代理调试连接清理失败:', cleanupError)
+          throw cleanupError
+        })
         if (
           rules.length &&
           !(error instanceof InterceptionEnded) &&
@@ -259,12 +275,15 @@ export function createResponseReplacement(
             tabId,
             `请求调试连接失败，请刷新页面或重新启用代理后重试：${String(error)}`
           )
+          throw error
         }
       }
     })()
     connecting.set(tabId, connection)
     try {
-      await connection
+      await connection.catch(error => {
+        if (initializing) throw error
+      })
     } finally {
       if (connecting.get(tabId) === connection) connecting.delete(tabId)
     }
@@ -414,11 +433,9 @@ export function createResponseReplacement(
       const method = event.request.method
       const response = await fetch(match.target, {
         method,
-        headers: Object.fromEntries(
-          mergeHeaderSettings(
-            Object.entries(getReplacementRequestHeaders(event.request.headers)),
-            match.rule.requestHeaders
-          )
+        headers: mergeHeaderSettings(
+          Object.entries(getReplacementRequestHeaders(event.request.headers)),
+          match.rule.requestHeaders
         ),
         body: method === 'GET' || method === 'HEAD' ? undefined : body,
         credentials: 'omit',
@@ -648,6 +665,7 @@ export function createResponseReplacement(
 
   chrome.webNavigation.onBeforeNavigate.addListener(event => {
     if (!/^https?:\/\//.test(event.url)) return
+    if (scoped && event.tabId !== activeTabId) return
     if (event.frameId === 0)
       void reconnectOnNavigation(event.tabId).catch(error =>
         showError(event.tabId, `请求替换连接检查失败：${String(error)}`)
@@ -659,9 +677,10 @@ export function createResponseReplacement(
     if (message) void showError(event.tabId, message)
   })
   chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+    if (scoped && tabId !== activeTabId) return
     if (!change.url && change.status !== 'complete') return
     if (/^https?:\/\//.test(tab.url ?? '')) void attach(tabId)
-    else void detach(tabId)
+    else void detach(tabId).catch(error => logError('代理调试连接清理失败:', error))
   })
   chrome.tabs.onRemoved.addListener(tabId => {
     attached.delete(tabId)
@@ -673,68 +692,123 @@ export function createResponseReplacement(
   })
 
   return {
-    async update(nextRules: ProxyRule[], nextTypes: RequestType[] = ['document']) {
-      getResponsePatterns(nextTypes)
-      for (const rule of nextRules) {
-        validateHeaderSettings(rule.requestHeaders, 'request')
-        validateHeaderSettings(rule.responseHeaders, 'response')
-      }
-      const nextHeaderRules = nextRules.filter(hasHeaderSettings)
-      const nextObserveLoading =
-        !!notifications && nextRules.some(rule => rule.showSuccessNotification === true)
-      const scopeChanged =
-        JSON.stringify(resourceTypes) !== JSON.stringify(nextTypes) ||
-        !!headerRules.length !== !!nextHeaderRules.length ||
-        observeLoading !== nextObserveLoading
-      const mappings = (items: ProxyRule[]) =>
-        items.map(rule => [
-          rule.sourceUrl,
-          rule.targetUrl,
-          rule.requestHeaders,
-          rule.responseHeaders
-        ])
-      if (scopeChanged || JSON.stringify(mappings(rules)) !== JSON.stringify(mappings(nextRules)))
+    async update(
+      nextRules: ProxyRule[],
+      nextTypes: RequestType[] = ['document'],
+      signal?: AbortSignal,
+      scope?: { tabId?: number }
+    ) {
+      signal?.throwIfAborted()
+      const abort = () => {
+        rules = []
+        headerRules = []
+        connectionRevision++
         pending.forEach(requests => requests.forEach(controller => controller.abort()))
-      resourceTypes = [...nextTypes]
-      observeLoading = nextObserveLoading
-      headerRules = nextHeaderRules
-      const wasEnabled = !!rules.length
-      rules = nextTypes.length || headerRules.length ? nextRules : []
-      if (!rules.length) {
-        debuggingCancelled = false
-        connectionRevision++
-      } else if (!wasEnabled) {
-        connectionRevision++
       }
-      const revision = connectionRevision
-      if (!rules.length || scopeChanged) clearRedirects()
-      if (!debuggingCancelled) dismissed.clear()
-      if (scopeChanged && rules.length)
-        for (const session of sessions.values()) {
-          if (!isCurrentSession(session) || unsupportedSessions.has(session)) continue
-          try {
-            if (headerRules.length || observeLoading)
-              await chrome.debugger.sendCommand(session, 'Network.enable')
-            else await chrome.debugger.sendCommand(session, 'Network.disable')
-            if (!isCurrentSession(session)) continue
-            await chrome.debugger.sendCommand(session, 'Fetch.enable', {
-              patterns: interceptionPatterns()
-            })
-          } catch (error) {
-            if (!isCurrentSession(session) || isEndedInterception(error)) continue
-            if (session.sessionId && isMissingDebuggerMethod(error, 'Fetch.enable')) {
-              unsupportedSessions.add(session)
-              continue
+      signal?.addEventListener('abort', abort, { once: true })
+      try {
+        getResponsePatterns(nextTypes)
+        for (const rule of nextRules) {
+          validateHeaderSettings(rule.requestHeaders, 'request')
+          validateHeaderSettings(rule.responseHeaders, 'response')
+        }
+        const nextHeaderRules = nextRules.filter(hasHeaderSettings)
+        const nextObserveLoading =
+          !!notifications && nextRules.some(rule => rule.showSuccessNotification === true)
+        const targetChanged =
+          scoped !== (scope !== undefined) || (scope !== undefined && activeTabId !== scope.tabId)
+        const scopeChanged =
+          JSON.stringify(resourceTypes) !== JSON.stringify(nextTypes) ||
+          !!headerRules.length !== !!nextHeaderRules.length ||
+          observeLoading !== nextObserveLoading ||
+          targetChanged
+        const mappings = (items: ProxyRule[]) =>
+          items.map(rule => [
+            rule.sourceUrl,
+            rule.targetUrl,
+            rule.requestHeaders,
+            rule.responseHeaders
+          ])
+        if (scopeChanged || JSON.stringify(mappings(rules)) !== JSON.stringify(mappings(nextRules)))
+          pending.forEach(requests => requests.forEach(controller => controller.abort()))
+        resourceTypes = [...nextTypes]
+        observeLoading = nextObserveLoading
+        headerRules = nextHeaderRules
+        const wasEnabled = !!rules.length
+        rules = nextTypes.length || headerRules.length ? nextRules : []
+        if (targetChanged) {
+          scoped = scope !== undefined
+          activeTabId = scope?.tabId
+          connectionRevision++
+          const current = scoped
+            ? [...attached].filter(tabId => tabId !== activeTabId)
+            : [...attached]
+          await Promise.allSettled(current.map(detach))
+          await Promise.allSettled(
+            [...connecting.entries()]
+              .filter(([tabId]) => !scoped || tabId !== activeTabId)
+              .map(([, connection]) => connection)
+          )
+          const late = [...attached].filter(tabId => !scoped || tabId !== activeTabId)
+          await Promise.allSettled(late.map(detach))
+        }
+        if (!rules.length) {
+          debuggingCancelled = false
+          connectionRevision++
+          clearRedirects()
+          const current = [...attached]
+          const initial = await Promise.allSettled(current.map(detach))
+          await Promise.allSettled([...connecting.values()])
+          const late = await Promise.allSettled(
+            [...attached].filter(id => !current.includes(id)).map(detach)
+          )
+          const failures = [...initial, ...late].flatMap(result =>
+            result.status === 'rejected' ? [String(result.reason)] : []
+          )
+          if (failures.length) throw new Error(failures.join('；'))
+          return
+        } else if (!wasEnabled) {
+          connectionRevision++
+        }
+        const revision = connectionRevision
+        if (!rules.length || scopeChanged) clearRedirects()
+        if (!debuggingCancelled) dismissed.clear()
+        if (scopeChanged && rules.length)
+          for (const session of sessions.values()) {
+            if (!isCurrentSession(session) || unsupportedSessions.has(session)) continue
+            try {
+              if (headerRules.length || observeLoading)
+                await chrome.debugger.sendCommand(session, 'Network.enable')
+              else await chrome.debugger.sendCommand(session, 'Network.disable')
+              if (!isCurrentSession(session)) continue
+              await chrome.debugger.sendCommand(session, 'Fetch.enable', {
+                patterns: interceptionPatterns()
+              })
+            } catch (error) {
+              if (!isCurrentSession(session) || isEndedInterception(error)) continue
+              if (session.sessionId && isMissingDebuggerMethod(error, 'Fetch.enable')) {
+                unsupportedSessions.add(session)
+                continue
+              }
+              throw error
             }
-            throw error
+          }
+        if (scoped) {
+          if (activeTabId !== undefined && revision === connectionRevision)
+            await attach(activeTabId, true)
+        } else {
+          const tabs = await chrome.tabs.query({})
+          for (const tab of tabs) {
+            if (revision !== connectionRevision || (rules.length && debuggingCancelled)) break
+            if (tab.id === undefined) continue
+            if (rules.length && /^https?:\/\//.test(tab.url ?? '')) await attach(tab.id, true)
+            else await detach(tab.id)
           }
         }
-      const tabs = await chrome.tabs.query({})
-      for (const tab of tabs) {
-        if (revision !== connectionRevision || (rules.length && debuggingCancelled)) break
-        if (tab.id === undefined) continue
-        if (rules.length && /^https?:\/\//.test(tab.url ?? '')) await attach(tab.id)
-        else await detach(tab.id)
+        signal?.throwIfAborted()
+        if (signal && debuggingCancelled) throw new Error('用户取消了代理初始化')
+      } finally {
+        signal?.removeEventListener('abort', abort)
       }
     }
   }

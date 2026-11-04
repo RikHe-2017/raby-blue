@@ -24,9 +24,10 @@ export type RequestPolicy = Readonly<Record<RequestType, ProxyMode>>
 export interface StrategyConfig {
   rules: ProxyRule[]
   resourceTypes: RequestType[]
+  tabId?: number
 }
 
 export interface ProxyStrategy {
-  update(config: StrategyConfig): Promise<void>
+  update(config: StrategyConfig, signal?: AbortSignal): Promise<void>
   dispose(): Promise<void>
 }

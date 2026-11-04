@@ -37,6 +37,10 @@ const protectedRequestHeaders = new Set([
   'via'
 ])
 
+export function createHeaderSetting(id: string): HeaderSetting {
+  return { id, enabled: true, name: '', value: '', mode: 'overwrite' }
+}
+
 export function validateHeaderSettings(value: unknown, direction: HeaderDirection): void {
   if (value === undefined) return
   if (!Array.isArray(value)) throw new Error('头设置必须是数组')
@@ -49,7 +53,8 @@ export function validateHeaderSettings(value: unknown, direction: HeaderDirectio
     if (
       typeof row.enabled !== 'boolean' ||
       typeof row.name !== 'string' ||
-      typeof row.value !== 'string'
+      typeof row.value !== 'string' ||
+      (row.mode !== undefined && row.mode !== 'overwrite' && row.mode !== 'merge')
     )
       throw new Error('头设置字段类型错误')
     const name = row.name.trim()
@@ -75,7 +80,9 @@ export function mergeHeaderSettings(
   settings: HeaderSetting[] = []
 ): [string, string][] {
   const active = settings.filter(row => row.enabled)
-  const replaced = new Set(active.map(row => row.name.trim().toLowerCase()))
+  const replaced = new Set(
+    active.filter(row => row.mode !== 'merge').map(row => row.name.trim().toLowerCase())
+  )
   return [
     ...original
       .filter(([name]) => !replaced.has(name.toLowerCase()))

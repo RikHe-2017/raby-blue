@@ -7,12 +7,17 @@ import { setProxyNodeFavorite, updateProxyRule } from './proxy-rules'
 import type { ProxyRuleChanges } from './proxy-rules'
 import { useUserPreferencesStore } from './user-preferences'
 import type { TreeUIState } from './user-preferences-model'
+import { isProxyRuntimeStatus } from '../proxy/runtime-status'
+import type { ProxyRuntimeStatus } from '../proxy/runtime-status'
+import { logError } from '../utils/logger'
 
 const storage = createStorageAdapter()
 
 export const useProxyStore = defineStore('proxy', () => {
   const config = ref<ProxyConfig>(DEFAULT_PROXY_CONFIG)
   const userPreferences = useUserPreferencesStore()
+  const runtimeStatus = ref<ProxyRuntimeStatus>()
+  const toggling = ref(false)
   let saveQueue: Promise<void> = Promise.resolve()
   const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime?.id
 
@@ -24,6 +29,8 @@ export const useProxyStore = defineStore('proxy', () => {
       const enabled = changes.proxyConfig?.newValue?.enabled
       if (area === 'local' && typeof enabled === 'boolean' && enabled !== config.value.enabled)
         config.value = { ...config.value, enabled }
+      const runtime = changes.proxyRuntimeStatus?.newValue
+      if (area === 'session' && isProxyRuntimeStatus(runtime)) runtimeStatus.value = { ...runtime }
     }
     chrome.storage.onChanged.addListener(syncGlobalSwitch)
     onScopeDispose(() => chrome.storage.onChanged.removeListener(syncGlobalSwitch))
@@ -33,6 +40,8 @@ export const useProxyStore = defineStore('proxy', () => {
   const groups = computed(() => config.value.groups)
 
   const toggleGlobalProxy = async () => {
+    if (toggling.value || runtimeStatus.value?.phase === 'applying') return
+    toggling.value = true
     config.value = { ...config.value, enabled: !config.value.enabled }
     try {
       await saveConfig(true)
@@ -41,6 +50,8 @@ export const useProxyStore = defineStore('proxy', () => {
         ProxyConfig | undefined
       if (persisted) config.value = { ...config.value, enabled: persisted.enabled }
       throw error
+    } finally {
+      toggling.value = false
     }
   }
 
@@ -74,14 +85,14 @@ export const useProxyStore = defineStore('proxy', () => {
       // 添加顶级分组
       config.value.groups.push(group)
     }
-    saveConfig()
+    void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
   }
 
   const updateGroup = (groupId: string, updatedGroup: Partial<ProxyGroup>) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
       Object.assign(group, updatedGroup)
-      saveConfig()
+      void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
     }
   }
 
@@ -105,14 +116,14 @@ export const useProxyStore = defineStore('proxy', () => {
     }
 
     config.value.groups = deleteGroupRecursive(config.value.groups)
-    saveConfig()
+    void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
   }
 
   const addRule = (groupId: string, rule: ProxyRule) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
       group.children.push(rule)
-      saveConfig()
+      void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
     }
   }
 
@@ -149,7 +160,7 @@ export const useProxyStore = defineStore('proxy', () => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
       group.children = group.children.filter(node => !(isProxyRule(node) && node.id === ruleId))
-      saveConfig()
+      void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
     }
   }
 
@@ -163,7 +174,9 @@ export const useProxyStore = defineStore('proxy', () => {
           action: 'saveProxyConfig',
           config: snapshot,
           updateEnabled
-        })) as { success?: boolean; error?: string } | undefined
+        })) as { success?: boolean; error?: string; runtimeStatus?: unknown } | undefined
+        if (isProxyRuntimeStatus(result?.runtimeStatus))
+          runtimeStatus.value = { ...result.runtimeStatus }
         if (!result?.success) throw new Error(result?.error ?? '保存代理配置失败')
       })
     saveQueue = operation
@@ -174,6 +187,11 @@ export const useProxyStore = defineStore('proxy', () => {
     const result = await storage.get('proxyConfig')
     if (result) {
       config.value = result
+    }
+    if (isExtension && chrome.storage.session) {
+      const saved = await chrome.storage.session.get('proxyRuntimeStatus')
+      if (isProxyRuntimeStatus(saved.proxyRuntimeStatus))
+        runtimeStatus.value = { ...saved.proxyRuntimeStatus }
     }
   }
 
@@ -186,6 +204,8 @@ export const useProxyStore = defineStore('proxy', () => {
 
   return {
     config,
+    runtimeStatus,
+    toggling,
     enabled,
     groups,
     uiState,

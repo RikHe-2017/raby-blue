@@ -1,6 +1,7 @@
 <script lang="ts" setup>
   import SaveStatus from '../common/SaveStatus.vue'
   import type { HeaderSetting } from '../../types/proxy'
+  import { createHeaderSetting } from '../../proxy/header-settings.ts'
 
   const props = defineProps<{
     title: string
@@ -19,10 +20,7 @@
   }
 
   const add = () => {
-    emit('update:modelValue', [
-      ...props.modelValue,
-      { id: crypto.randomUUID(), enabled: true, name: '', value: '' }
-    ])
+    emit('update:modelValue', [...props.modelValue, createHeaderSetting(crypto.randomUUID())])
   }
 
   const remove = (id: string) => {
@@ -97,7 +95,7 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="头名称" min-width="180">
+      <el-table-column label="头名称" min-width="140">
         <template #default="{ row }">
           <el-autocomplete
             :model-value="row.name"
@@ -110,7 +108,7 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="头值" min-width="180">
+      <el-table-column label="头值" min-width="140">
         <template #default="{ row }">
           <el-input
             :model-value="row.value"
@@ -121,6 +119,20 @@
             spellcheck="false"
             @update:model-value="value => update(row.id, { value })"
           />
+        </template>
+      </el-table-column>
+      <el-table-column label="处理方式" width="100" align="center">
+        <template #default="{ row }">
+          <el-select
+            :model-value="row.mode ?? 'overwrite'"
+            aria-label="头处理方式"
+            @update:model-value="
+              value => update(row.id, { mode: value === 'merge' ? 'merge' : 'overwrite' })
+            "
+          >
+            <el-option label="覆盖已有" value="overwrite" />
+            <el-option label="合并保留" value="merge" />
+          </el-select>
         </template>
       </el-table-column>
       <el-table-column width="44" align="center">
@@ -165,6 +177,16 @@
 
   .header-settings__table :deep(.el-autocomplete) {
     width: 100%;
+  }
+
+  .header-settings__table :deep(.el-select) {
+    width: 100%;
+  }
+
+  .header-settings__table :deep(.el-table__header),
+  .header-settings__table :deep(.el-table__body) {
+    width: 100% !important;
+    table-layout: fixed;
   }
 
   .header-settings__table :deep(.cell) {

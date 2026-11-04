@@ -81,6 +81,9 @@ export function getRedirectResourceTypes(
 }
 
 export function buildRedirectRules(config: StrategyConfig): chrome.declarativeNetRequest.Rule[] {
+  const hasScope = Object.prototype.hasOwnProperty.call(config, 'tabId')
+  const scopeTabId = config.tabId
+  if (hasScope && scopeTabId === undefined) return []
   const resourceTypes = getRedirectResourceTypes(config.resourceTypes)
   if (!resourceTypes.length) return []
   return config.rules.map((rule, index) => ({
@@ -97,7 +100,8 @@ export function buildRedirectRules(config: StrategyConfig): chrome.declarativeNe
           },
     condition: {
       regexFilter: buildSourcePattern(rule.sourceUrl),
-      resourceTypes: [...resourceTypes]
+      resourceTypes: [...resourceTypes],
+      ...(hasScope ? { tabIds: [scopeTabId!] } : {})
     }
   }))
 }

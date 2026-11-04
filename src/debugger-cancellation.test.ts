@@ -45,7 +45,16 @@ function fixture() {
       async getDynamicRules() {
         return state.redirects
       },
+      async getSessionRules() {
+        return state.redirects
+      },
       async updateDynamicRules(update: chrome.declarativeNetRequest.UpdateRuleOptions) {
+        state.redirects = [
+          ...state.redirects.filter(rule => !update.removeRuleIds?.includes(rule.id)),
+          ...(update.addRules ?? [])
+        ]
+      },
+      async updateSessionRules(update: chrome.declarativeNetRequest.UpdateRuleOptions) {
         state.redirects = [
           ...state.redirects.filter(rule => !update.removeRuleIds?.includes(rule.id)),
           ...(update.addRules ?? [])
@@ -356,12 +365,13 @@ test('a rapid explicit off/on replaces old pending connections without reviving 
     const cancelledBatch = driver.update(rules)
     await settle()
     f.cancel()
-    await driver.update([], [])
-    const resumedBatch = driver.update(rules)
+    const disabling = driver.update([], [])
     await settle()
     f.state.beforeAttach = undefined
     release()
     await cancelledBatch
+    await disabling
+    const resumedBatch = driver.update(rules)
     await resumedBatch
     expect(f.state.calls).toStrictEqual([1, 2, 1, 2, 3])
     expect([...f.state.connected]).toStrictEqual([1, 2, 3])

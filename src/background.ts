@@ -7,6 +7,7 @@ import { createProxySuccessNotifications } from './proxy/success-notifications'
 import notificationIcon from '/icons/icon32.png?inline'
 import { logError } from './utils/logger.ts'
 import { createProxyConfigPersistence } from './proxy/config-persistence'
+import { createProxyApplication } from './proxy/application'
 
 const storage = createStorageAdapter()
 const proxyConfigPersistence = createProxyConfigPersistence({
@@ -14,28 +15,37 @@ const proxyConfigPersistence = createProxyConfigPersistence({
   write: config => storage.set('proxyConfig', config)
 })
 const notifications = createProxySuccessNotifications(notificationIcon)
+const readActiveTabId = async () =>
+  (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id
 const proxyManager = new ProxyManager(
   {
     redirect: new RedirectProxy(),
     response: new ResponseProxy(notifications, () => proxyConfigPersistence.disable())
   },
-  notifications.update
+  notifications.update,
+  { readActiveTabId }
 )
 
-const refreshProxyConfiguration = () => {
-  return proxyManager
-    .refresh(async () => {
-      const config = (await storage.get('proxyConfig')) as ProxyConfig | undefined
-      return config ?? { enabled: false, groups: [] }
-    })
-    .catch(error => {
-      logError('Proxy configuration update failed:', error)
-    })
-}
+const proxyApplication = createProxyApplication({
+  manager: proxyManager,
+  persistence: proxyConfigPersistence,
+  readConfig: async () => (await storage.get('proxyConfig')) as ProxyConfig | undefined,
+  readStatus: async () =>
+    (await chrome.storage.session.get('proxyRuntimeStatus')).proxyRuntimeStatus,
+  publish: status => chrome.storage.session.set({ proxyRuntimeStatus: status })
+})
+
+const refreshProxyConfiguration = () =>
+  proxyApplication.refresh().catch(error => {
+    logError('Proxy configuration update failed:', error)
+  })
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.proxyConfig) refreshProxyConfiguration()
 })
+
+chrome.tabs.onActivated.addListener(() => refreshProxyConfiguration())
+chrome.windows.onFocusChanged.addListener(() => refreshProxyConfiguration())
 
 refreshProxyConfiguration()
 
@@ -50,12 +60,16 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       sendResponse({ success: false, error: '无效的代理配置' })
       return false
     }
-    void proxyConfigPersistence
+    void proxyApplication
       .save(request.config as ProxyConfig, request.updateEnabled === true)
-      .then(() => sendResponse({ success: true }))
+      .then(runtimeStatus => sendResponse({ success: true, runtimeStatus }))
       .catch(error => {
         logError('保存代理配置失败:', error)
-        sendResponse({ success: false, error: String(error) })
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          runtimeStatus: proxyApplication.getStatus()
+        })
       })
     return true
   }

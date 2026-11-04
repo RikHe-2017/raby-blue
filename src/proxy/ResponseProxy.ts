@@ -9,8 +9,11 @@ export class ResponseProxy implements ProxyStrategy {
     this.driver = createResponseReplacement(notifications, onUserCancelled)
   }
 
-  async update(config: StrategyConfig): Promise<void> {
-    await this.driver.update(config.rules, config.resourceTypes)
+  async update(config: StrategyConfig, signal?: AbortSignal): Promise<void> {
+    const scope = Object.prototype.hasOwnProperty.call(config, 'tabId')
+      ? { tabId: config.tabId }
+      : undefined
+    await this.driver.update(config.rules, config.resourceTypes, signal, scope)
   }
 
   async dispose(): Promise<void> {

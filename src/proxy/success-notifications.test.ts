@@ -94,7 +94,7 @@ async function fixture() {
     }
   }
 }
-test('only successful new active requests notify; one rule per document; no default-off injection', async () => {
+test('only successful active requests are delivered; page owns display deduplication', async () => {
   const f = await fixture()
   try {
     expect(f.notifications.begin(10, { ...rule, showSuccessNotification: false })).toBe(undefined)
@@ -110,7 +110,7 @@ test('only successful new active requests notify; one rule per document; no defa
     expect(f.messages[0].message.items).toStrictEqual([{ id: 'r', name: 'API', mapped: true }])
     f.notifications.begin(10, rule)?.()
     await settle()
-    expect(f.messages.length, 'same rule does not spam the same document').toBe(1)
+    expect(f.messages.length, 'background must not remember which rules the page has shown').toBe(2)
   } finally {
     f.restore()
   }
@@ -202,7 +202,7 @@ test('native redirect success requires observed source-to-target redirect and co
     f.restore()
   }
 })
-test('merge concurrent rules without leaking headers; a failed receiver does not consume document dedupe', async () => {
+test('merge concurrent rules without leaking headers; a failed receiver does not block later delivery', async () => {
   const f = await fixture()
   try {
     const second = {
@@ -255,7 +255,7 @@ test('slow receiver delivery does not duplicate the same rule, and inactive inje
     expect(
       attempts,
       'receiver refused a hidden-page install, so retry on the next active request'
-    ).toBe(2)
+    ).toBe(3)
     expect(f.messages.length, 'one pending delivery per rule').toBe(1)
     release()
     await settle()

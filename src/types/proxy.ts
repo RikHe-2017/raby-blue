@@ -1,11 +1,14 @@
 // 树节点类型：分组或规则
 export type ProxyNode = ProxyGroup | ProxyRule
 
+export type HeaderSettingMode = 'overwrite' | 'merge'
+
 export interface HeaderSetting {
   id: string
   enabled: boolean
   name: string
   value: string
+  mode?: HeaderSettingMode
 }
 
 export interface ProxyRule {

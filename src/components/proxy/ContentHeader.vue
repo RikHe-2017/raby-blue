@@ -1,6 +1,10 @@
 <script lang="ts" setup>
+  import type { ProxyRuntimeStatus } from '../../proxy/runtime-status'
+
   interface Props {
     proxyEnabled: boolean
+    pending?: boolean
+    runtimeStatus?: ProxyRuntimeStatus
   }
 
   interface Emits {
@@ -28,10 +32,38 @@
       </div>
       <div class="content-header__actions">
         <div class="content-header__switch">
-          <el-switch :model-value="proxyEnabled" @change="handleToggle" />
+          <el-switch
+            :model-value="
+              proxyEnabled &&
+              !pending &&
+              runtimeStatus?.phase !== 'applying' &&
+              runtimeStatus?.phase !== 'error'
+            "
+            :loading="pending || runtimeStatus?.phase === 'applying'"
+            :disabled="pending || runtimeStatus?.phase === 'applying'"
+            aria-label="代理总控"
+            @change="handleToggle"
+          />
         </div>
       </div>
     </div>
+    <p v-if="runtimeStatus?.phase === 'applying'" class="content-header__status" role="status">
+      代理配置初始化中…
+    </p>
+    <p
+      v-else-if="runtimeStatus?.phase === 'error'"
+      class="content-header__status content-header__status--error"
+      role="alert"
+    >
+      {{ runtimeStatus.message }}
+    </p>
+    <p
+      v-else-if="runtimeStatus?.phase === 'active' && proxyEnabled"
+      class="content-header__status"
+      role="status"
+    >
+      代理已就绪
+    </p>
   </div>
 </template>
 
@@ -39,6 +71,18 @@
   .content-header {
     border-bottom: 1px solid var(--el-border-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .content-header__status {
+    margin: 0;
+    padding: 0 8px 8px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .content-header__status--error {
+    color: var(--el-color-danger);
   }
 
   .content-header__content {

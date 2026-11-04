@@ -30,6 +30,7 @@ declare namespace chrome {
         urlFilter?: string;
         regexFilter?: string;
         resourceTypes?: ResourceType[];
+        tabIds?: number[];
       };
     }
 
@@ -40,5 +41,7 @@ declare namespace chrome {
 
     function updateDynamicRules(options: UpdateDynamicRulesOptions): Promise<void>;
     function getDynamicRules(): Promise<Rule[]>;
+    function updateSessionRules(options: UpdateRuleOptions): Promise<void>;
+    function getSessionRules(): Promise<Rule[]>;
   }
-} 
+}

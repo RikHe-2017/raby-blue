@@ -70,6 +70,16 @@ test('redirect rules reuse source matching and never include response-owned type
   expect(buildRedirectRules({ rules: [], resourceTypes: ['script'] })).toStrictEqual([])
   expect(buildRedirectRules({ rules: [rule], resourceTypes: [] })).toStrictEqual([])
 })
+test('redirect rules are scoped to the configured tab when a tab id is provided', () => {
+  const config = splitStrategyConfig([rule], DEFAULT_REQUEST_POLICY).redirect
+  const [scoped] = buildRedirectRules({ ...config, tabId: 42 })
+  const [unscoped] = buildRedirectRules(config)
+  const noActiveTab = buildRedirectRules({ ...config, tabId: undefined })
+
+  expect(scoped.condition.tabIds).toStrictEqual([42])
+  expect(unscoped.condition.tabIds).toBe(undefined)
+  expect(noActiveTab).toStrictEqual([])
+})
 test('unsupported response types are rejected rather than silently misrouted', () => {
   expect(() =>
     splitStrategyConfig([rule], { ...DEFAULT_REQUEST_POLICY, websocket: 'response' })
@@ -121,25 +131,22 @@ test('manager initializes and switches policy without overlapping old redirects'
   const before = structuredClone(proxyConfig)
   await manager.refresh(async () => proxyConfig)
   expect(calls.map(call => call.slice(0, 2))).toStrictEqual([
-    ['redirect', 'dispose'],
-    ['response', 'update'],
-    ['redirect', 'update']
+    ['response', 'dispose'],
+    ['redirect', 'update'],
+    ['response', 'update']
   ])
   calls.length = 0
   await manager.refresh(async () => proxyConfig)
-  expect(calls.map(call => call.slice(0, 2))).toStrictEqual([
-    ['response', 'update'],
-    ['redirect', 'update']
-  ])
+  expect(calls).toStrictEqual([])
   calls.length = 0
   await manager.refresh(async () => proxyConfig, { ...DEFAULT_REQUEST_POLICY, script: 'response' })
   expect(calls.map(call => call.slice(0, 2))).toStrictEqual([
-    ['redirect', 'dispose'],
-    ['response', 'update'],
-    ['redirect', 'update']
+    ['response', 'dispose'],
+    ['redirect', 'update'],
+    ['response', 'update']
   ])
-  expect(calls[1][1] === 'update' && calls[1][2].includes('script')).toBeTruthy()
-  expect(calls[2][1] === 'update' && !calls[2][2].includes('script')).toBeTruthy()
+  expect(calls[1][1] === 'update' && !calls[1][2].includes('script')).toBeTruthy()
+  expect(calls[2][1] === 'update' && calls[2][2].includes('script')).toBeTruthy()
   calls.length = 0
   await manager.refresh(async () => ({ ...proxyConfig, enabled: false }))
   expect(calls.every(call => call[1] !== 'update' || call[3].length === 0)).toBeTruthy()
@@ -150,6 +157,35 @@ test('manager initializes and switches policy without overlapping old redirects'
   ])
   expect(proxyConfig).toStrictEqual(before)
 })
+test('manager passes the focused active tab to both proxy strategies and refreshes when it changes', async () => {
+  const received: { mode: ProxyMode; tabId: number | undefined }[] = []
+  let activeTabId: number | undefined = 1
+  const strategy = (mode: ProxyMode): ProxyStrategy => ({
+    async update(config) {
+      received.push({ mode, tabId: config.tabId })
+    },
+    async dispose() {}
+  })
+  const manager = new ProxyManager(
+    { redirect: strategy('redirect'), response: strategy('response') },
+    undefined,
+    { readActiveTabId: async () => activeTabId }
+  )
+
+  await manager.refresh(async () => proxyConfig)
+  expect(received).toStrictEqual([
+    { mode: 'redirect', tabId: 1 },
+    { mode: 'response', tabId: 1 }
+  ])
+
+  received.length = 0
+  activeTabId = 2
+  await manager.refresh(async () => proxyConfig)
+  expect(received).toStrictEqual([
+    { mode: 'redirect', tabId: 2 },
+    { mode: 'response', tabId: 2 }
+  ])
+})
 test('notification configuration failure cannot dispose an otherwise working proxy', async () => {
   vi.spyOn(console, 'log').mockImplementation(() => {})
   const { calls, strategies } = strategyFixture()
@@ -158,9 +194,9 @@ test('notification configuration failure cannot dispose an otherwise working pro
   })
   await manager.refresh(async () => proxyConfig)
   expect(calls.map(call => call.slice(0, 2))).toStrictEqual([
-    ['redirect', 'dispose'],
-    ['response', 'update'],
-    ['redirect', 'update']
+    ['response', 'dispose'],
+    ['redirect', 'update'],
+    ['response', 'update']
   ])
   await manager.dispose()
 })
@@ -189,7 +225,12 @@ test('manager serializes source loads and cleans up after failures, then recover
   strategies.redirect.update = async () => {
     throw new Error('test update failure')
   }
-  await expect(manager.refresh(async () => proxyConfig)).rejects.toThrow(/test update failure/)
+  await expect(
+    manager.refresh(async () => ({
+      ...proxyConfig,
+      groups: [{ ...proxyConfig.groups[0], name: 'changed' }]
+    }))
+  ).rejects.toThrow(/test update failure/)
   expect(calls.slice(-2)).toStrictEqual([
     ['redirect', 'dispose'],
     ['response', 'dispose']
@@ -197,21 +238,28 @@ test('manager serializes source loads and cleans up after failures, then recover
   strategies.redirect.update = update
   await manager.refresh(async () => proxyConfig)
   expect(calls.slice(-3).map(call => call.slice(0, 2))).toStrictEqual([
-    ['redirect', 'dispose'],
-    ['response', 'update'],
-    ['redirect', 'update']
+    ['response', 'dispose'],
+    ['redirect', 'update'],
+    ['response', 'update']
   ])
 })
 test('redirect implementation replaces browser rules atomically and clears on disposal', async () => {
   const previous = globalThis.chrome
   const updates: chrome.declarativeNetRequest.UpdateRuleOptions[] = []
+  const sessionUpdates: chrome.declarativeNetRequest.UpdateRuleOptions[] = []
   vi.stubGlobal('chrome', {
     declarativeNetRequest: {
       async getDynamicRules() {
         return [{ id: 99 }]
       },
+      async getSessionRules() {
+        return []
+      },
       async updateDynamicRules(update: chrome.declarativeNetRequest.UpdateRuleOptions) {
         updates.push(update)
+      },
+      async updateSessionRules(update: chrome.declarativeNetRequest.UpdateRuleOptions) {
+        sessionUpdates.push(update)
       }
     }
   })
@@ -219,14 +267,55 @@ test('redirect implementation replaces browser rules atomically and clears on di
     const strategy = new RedirectProxy()
     await strategy.update(splitStrategyConfig([rule], DEFAULT_REQUEST_POLICY).redirect)
     expect(updates[0].removeRuleIds).toStrictEqual([99])
-    expect(requireValue(updates[0].addRules).length).toBe(1)
+    expect(updates[0].addRules).toStrictEqual([])
+    expect(requireValue(sessionUpdates[0].addRules).length).toBe(1)
     expect(
-      !requireValue(requireValue(updates[0].addRules)[0].condition.resourceTypes).some(
+      !requireValue(requireValue(sessionUpdates[0].addRules)[0].condition.resourceTypes).some(
         type => type === 'main_frame'
       )
     ).toBeTruthy()
     await strategy.dispose()
     expect(updates[1]).toStrictEqual({ removeRuleIds: [99], addRules: [] })
+    expect(sessionUpdates[1]).toStrictEqual({ removeRuleIds: [], addRules: [] })
+  } finally {
+    vi.stubGlobal('chrome', previous)
+  }
+})
+test('redirect implementation uses scoped session rules and removes legacy dynamic rules', async () => {
+  const previous = globalThis.chrome
+  const dynamicUpdates: chrome.declarativeNetRequest.UpdateRuleOptions[] = []
+  const sessionUpdates: chrome.declarativeNetRequest.UpdateRuleOptions[] = []
+  vi.stubGlobal('chrome', {
+    declarativeNetRequest: {
+      async getDynamicRules() {
+        return [{ id: 99 }]
+      },
+      async getSessionRules() {
+        return [{ id: 1 }]
+      },
+      async updateDynamicRules(update: chrome.declarativeNetRequest.UpdateRuleOptions) {
+        dynamicUpdates.push(update)
+      },
+      async updateSessionRules(update: chrome.declarativeNetRequest.UpdateRuleOptions) {
+        sessionUpdates.push(update)
+      }
+    }
+  })
+  try {
+    const strategy = new RedirectProxy()
+    await strategy.update({
+      ...splitStrategyConfig([rule], DEFAULT_REQUEST_POLICY).redirect,
+      tabId: 42
+    })
+
+    expect(dynamicUpdates).toStrictEqual([{ removeRuleIds: [99], addRules: [] }])
+    expect(sessionUpdates[0].removeRuleIds).toStrictEqual([1])
+    expect(requireValue(sessionUpdates[0].addRules)[0].condition.tabIds).toStrictEqual([42])
+
+    await strategy.dispose()
+
+    expect(dynamicUpdates[1]).toStrictEqual({ removeRuleIds: [99], addRules: [] })
+    expect(sessionUpdates[1]).toStrictEqual({ removeRuleIds: [1], addRules: [] })
   } finally {
     vi.stubGlobal('chrome', previous)
   }
