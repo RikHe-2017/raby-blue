@@ -69,6 +69,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.3",
     "eslint-plugin-vue": "^10.3.0",
+    "fake-indexeddb": "^6.2.7",
     "sharp": "^0.34.1",
     "typescript": "~5.8.3",
     "unplugin-auto-import": "^20.3.0",

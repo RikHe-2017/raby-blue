@@ -20,6 +20,8 @@ import {
 } from './proxy/debugger-errors.ts'
 import type { ProxySuccessObserver } from './proxy/success-notifications'
 import { logError, logWarn } from './utils/logger.ts'
+import { changedHeaders } from './logging/model'
+import { logProxyRequest } from './logging/proxy'
 
 interface PausedRequest {
   requestId: string
@@ -72,7 +74,10 @@ export function createResponseReplacement(
   const unsupportedSessions = new WeakSet<Session>()
   const pausedOperations = new Map<string, PausedOperation>()
   const networkRequests = new Map<string, ProxyRequestOwner>()
-  const successes = new Map<string, { complete: () => void; applied: boolean; loaded: boolean }>()
+  const successes = new Map<
+    string,
+    { complete: () => void; failed?: (reason: string) => void; applied: boolean; loaded: boolean }
+  >()
   const requestOwners = new Map<
     string,
     {
@@ -365,10 +370,43 @@ export function createResponseReplacement(
       owner &&
       hasHeaderSettings(owner.rule) &&
       getProxyRequestOwner(event.request.url, undefined, [owner.rule])?.target === event.request.url
-    const complete =
+    const requestHeaders = owner?.rule.requestHeaders?.some(row => row.enabled)
+      ? {
+          headers: mergeHeaderSettings(
+            Object.entries(event.request.headers),
+            owner.rule.requestHeaders
+          ).map(([name, value]) => ({ name, value }))
+        }
+      : {}
+    const notificationComplete =
       owner && (match || directHeaderOnly) ? beginSuccess(tabId, owner.rule) : undefined
+    const complete =
+      owner && (match || hasHeaderSettings(owner.rule))
+        ? () => {
+            logProxyRequest(
+              event.request.url,
+              owner.target,
+              owner.rule.name,
+              changedHeaders(event.request.headers, requestHeaders.headers ?? [])
+            )
+            notificationComplete?.()
+          }
+        : undefined
     const success =
-      complete && event.networkId ? { complete, applied: false, loaded: false } : undefined
+      complete && event.networkId
+        ? {
+            complete,
+            applied: false,
+            loaded: false,
+            failed: (reason: string) =>
+              logError('代理请求失败', {
+                sourceUrl: event.request.url,
+                targetUrl: owner?.target,
+                ruleName: owner?.rule.name,
+                reason
+              })
+          }
+        : undefined
     if (success) successes.set(networkKey(session, event.networkId!), success)
     if (
       owner &&
@@ -383,14 +421,6 @@ export function createResponseReplacement(
       if (headerRules.length && event.networkId && !networkOwner)
         networkRequests.set(networkKey(session, event.networkId), owner)
     }
-    const requestHeaders = owner?.rule.requestHeaders?.some(row => row.enabled)
-      ? {
-          headers: mergeHeaderSettings(
-            Object.entries(event.request.headers),
-            owner.rule.requestHeaders
-          ).map(([name, value]) => ({ name, value }))
-        }
-      : {}
     if (!match) {
       await sendPausedCommand(operation, 'Fetch.continueRequest', {
         requestId: event.requestId,
@@ -520,6 +550,8 @@ export function createResponseReplacement(
         success.loaded = true
         finishSuccess(success)
       }
+      if (success && method === 'Network.loadingFailed' && !canceled)
+        success.failed?.(failed.errorText ?? '请求加载失败')
       networkRequests.delete(networkKey(session, networkId))
       for (const [key, binding] of requestOwners) {
         if (
@@ -713,8 +745,7 @@ export function createResponseReplacement(
           validateHeaderSettings(rule.responseHeaders, 'response')
         }
         const nextHeaderRules = nextRules.filter(hasHeaderSettings)
-        const nextObserveLoading =
-          !!notifications && nextRules.some(rule => rule.showSuccessNotification === true)
+        const nextObserveLoading = nextRules.length > 0
         const targetChanged =
           scoped !== (scope !== undefined) || (scope !== undefined && activeTabId !== scope.tabId)
         const scopeChanged =

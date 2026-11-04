@@ -7,6 +7,7 @@ export default defineManifest(({ command }) => ({
   version: '1.0.0',
   description: 'Proxy requests with redirects and response replacement',
   permissions: [
+    'alarms',
     'storage',
     'declarativeNetRequest',
     'declarativeNetRequestWithHostAccess',

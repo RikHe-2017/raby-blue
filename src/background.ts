@@ -8,6 +8,10 @@ import notificationIcon from '/icons/icon32.png?inline'
 import { logError } from './utils/logger.ts'
 import { createProxyConfigPersistence } from './proxy/config-persistence'
 import { createProxyApplication } from './proxy/application'
+import { startLogging } from './logging/background'
+import { createProxyLogObserver } from './logging/proxy'
+
+startLogging()
 
 const storage = createStorageAdapter()
 const proxyConfigPersistence = createProxyConfigPersistence({
@@ -15,6 +19,7 @@ const proxyConfigPersistence = createProxyConfigPersistence({
   write: config => storage.set('proxyConfig', config)
 })
 const notifications = createProxySuccessNotifications(notificationIcon)
+const proxyLogs = createProxyLogObserver()
 const readActiveTabId = async () =>
   (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id
 const proxyManager = new ProxyManager(
@@ -22,7 +27,10 @@ const proxyManager = new ProxyManager(
     redirect: new RedirectProxy(),
     response: new ResponseProxy(notifications, () => proxyConfigPersistence.disable())
   },
-  notifications.update,
+  (rules, types) => {
+    notifications.update(rules, types)
+    proxyLogs.update(rules, types)
+  },
   { readActiveTabId }
 )
 

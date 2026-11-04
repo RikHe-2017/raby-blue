@@ -12,6 +12,7 @@
   import type { ScriptNode } from '../../types/script'
   import { applyBackup, createBackup, parseBackup } from './transfer'
   import type { Backup, ExportScope, ImportMode } from './transfer'
+  import LoggingSettings from '../logging/LoggingSettings.vue'
 
   defineProps<{ modelValue: boolean }>()
   const emit = defineEmits<{
@@ -31,6 +32,8 @@
   const backup = ref<Backup | null>(null)
   const errorMessage = ref('')
   const busy = ref(false)
+  const activeSettings = ref('transfer')
+  const loggingBusy = ref(false)
   const reading = ref(false)
   const controlsDisabled = computed(() => busy.value || reading.value)
   const importDisabled = computed(() => controlsDisabled.value || !backup.value)
@@ -145,22 +148,27 @@
   }
 
   const updateVisible = (value: boolean) => {
-    if (!busy.value) emit('update:modelValue', value)
+    if (!busy.value && !loggingBusy.value) emit('update:modelValue', value)
   }
 </script>
 
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="配置导入与导出"
-    width="560px"
+    title="设置"
+    width="640px"
     :style="{ maxWidth: 'calc(100vw - 24px)' }"
     :close-on-click-modal="false"
-    :close-on-press-escape="!busy"
-    :show-close="!busy"
+    :close-on-press-escape="!busy && !loggingBusy"
+    :show-close="!busy && !loggingBusy"
     @update:model-value="updateVisible"
   >
-    <div class="config-transfer">
+    <el-tabs v-model="activeSettings">
+      <el-tab-pane label="配置导入与导出" name="transfer" :disabled="loggingBusy" />
+      <el-tab-pane label="日志管理" name="logging" :disabled="controlsDisabled" />
+    </el-tabs>
+    <LoggingSettings v-if="activeSettings === 'logging'" @busy-change="loggingBusy = $event" />
+    <div v-show="activeSettings === 'transfer'" class="config-transfer">
       <section class="config-transfer__section" aria-label="导入配置">
         <!-- Prettier uses self-closing input tags in Vue templates. -->
         <!-- eslint-disable vue/html-self-closing -->

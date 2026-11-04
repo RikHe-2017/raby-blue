@@ -5,6 +5,8 @@ import { ResponseProxy } from './proxy/ResponseProxy.ts'
 import type { ProxyRule } from './types/proxy'
 import { createTestEvent as event } from './test-utils/fixtures'
 import type { DebugCommand, DebugSession } from './test-utils/fixtures'
+import { setLogSink } from './utils/logger'
+import type { LogEntry } from './logging/model'
 const settle = async () => {
   for (let count = 0; count < 8; count++) await new Promise(resolve => setImmediate(resolve))
 }
@@ -19,6 +21,69 @@ const rules: ProxyRule[] = [
     targetUrl: 'http://localhost:8098/'
   }
 ]
+
+test.each([false, true])(
+  'header-only logging waits for completion, independent of notification: failed=%s',
+  async failed => {
+    const fixture = browserFixture()
+    vi.stubGlobal('chrome', fixture.chrome)
+    const entries: LogEntry[] = []
+    setLogSink(async entry => {
+      entries.push(entry)
+    })
+    const driver = createResponseReplacement()
+    try {
+      await driver.update([
+        {
+          ...rules[0],
+          targetUrl: '',
+          showSuccessNotification: false,
+          requestHeaders: [
+            { id: 'h', enabled: true, name: 'Authorization', value: 'Bearer original' }
+          ]
+        }
+      ])
+      const request = {
+        requestId: 'h',
+        networkId: 'net',
+        resourceType: 'XHR',
+        request: {
+          url: 'http://example.test/api?token=original',
+          method: 'GET',
+          headers: { Accept: 'json' }
+        }
+      }
+      fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', request)
+      await settle()
+      expect(entries.filter(entry => entry.level === 'info')).toHaveLength(0)
+      fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+        ...request,
+        responseStatusCode: 200,
+        responseHeaders: []
+      })
+      await settle()
+      fixture.chrome.debugger.onEvent.emit(
+        { tabId: 1 },
+        failed ? 'Network.loadingFailed' : 'Network.loadingFinished',
+        { requestId: 'net', ...(failed ? { errorText: 'net::ERR_FAILED' } : {}) }
+      )
+      const logs = entries.filter(entry => entry.level === 'info')
+      expect(logs).toHaveLength(failed ? 0 : 1)
+      if (!failed)
+        expect(logs[0].details).toEqual([
+          {
+            sourceUrl: request.request.url,
+            targetUrl: request.request.url,
+            ruleName: 'test',
+            requestHeaders: { Authorization: 'Bearer original' }
+          }
+        ])
+    } finally {
+      await driver.update([], [])
+      setLogSink(async () => {})
+    }
+  }
+)
 interface BrowserState {
   connected: boolean
   attachCount: number

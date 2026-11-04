@@ -276,7 +276,7 @@
         if (response && response.success) {
           ElMessage.success('脚本执行成功')
           if (response.results) {
-            logInfo('执行结果:', response.results)
+            logInfo('脚本执行完成')
           }
         } else {
           ElMessage.error(response?.error || '脚本执行失败')
@@ -288,7 +288,7 @@
           const result = eval(scriptContent.value)
           ElMessage.success('脚本执行成功（开发模式）')
           if (result !== undefined) {
-            logInfo('执行结果:', result)
+            logInfo('脚本执行完成')
           }
         } catch (evalError) {
           ElMessage.error(

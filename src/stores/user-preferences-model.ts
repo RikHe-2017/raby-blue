@@ -1,3 +1,6 @@
+import { normalizeLoggingPreferences } from '../logging/model'
+import type { LoggingPreferences } from '../logging/model'
+
 export interface TreeUIState {
   expandedKeys: string[]
   activeGroupId: string
@@ -11,6 +14,7 @@ export interface SidebarPreferences {
 }
 
 export interface UserPreferences {
+  logging: LoggingPreferences
   activeTab: 'proxy' | 'script'
   proxySidebar: SidebarPreferences
   proxyUIState: TreeUIState
@@ -25,6 +29,7 @@ export interface ScriptSidebarPreferences {
 }
 
 export interface UserPreferencesPatch {
+  logging?: Partial<LoggingPreferences>
   activeTab?: UserPreferences['activeTab']
   proxySidebar?: Partial<SidebarPreferences>
   proxyUIState?: Partial<TreeUIState>
@@ -74,6 +79,7 @@ export function normalizeUserPreferences(value: unknown): UserPreferences {
   const saved = record(value)
   const scriptSidebar = record(saved.scriptSidebar)
   return {
+    logging: normalizeLoggingPreferences(saved.logging),
     activeTab: saved.activeTab === 'script' ? 'script' : 'proxy',
     proxySidebar: normalizeSidebarPreferences(saved.proxySidebar),
     proxyUIState: normalizeTreeState(saved.proxyUIState),
@@ -95,6 +101,7 @@ export function mergeUserPreferences(
   return normalizeUserPreferences({
     ...current,
     ...patch,
+    logging: { ...current.logging, ...patch.logging },
     proxySidebar: { ...current.proxySidebar, ...patch.proxySidebar },
     proxyUIState: { ...current.proxyUIState, ...patch.proxyUIState },
     scriptUIState: { ...current.scriptUIState, ...patch.scriptUIState },

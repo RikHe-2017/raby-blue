@@ -74,12 +74,12 @@
             </template>
           </el-tab-pane>
         </el-tabs>
-        <el-tooltip content="配置导入与导出">
+        <el-tooltip content="设置">
           <el-button
             class="app__settings"
             text
             circle
-            aria-label="配置导入与导出"
+            aria-label="设置"
             :loading="openingTransfer"
             @click="openTransfer"
           >

@@ -18,8 +18,10 @@ declare module 'vue' {
     ElAutocomplete: typeof import('element-plus/es')['ElAutocomplete']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCheckbox: typeof import('element-plus/es')['ElCheckbox']
+    ElCheckboxGroup: typeof import('element-plus/es')['ElCheckboxGroup']
     ElCollapse: typeof import('element-plus/es')['ElCollapse']
     ElCollapseItem: typeof import('element-plus/es')['ElCollapseItem']
+    ElDatePicker: typeof import('element-plus/es')['ElDatePicker']
     ElDialog: typeof import('element-plus/es')['ElDialog']
     ElDropdown: typeof import('element-plus/es')['ElDropdown']
     ElDropdownItem: typeof import('element-plus/es')['ElDropdownItem']
@@ -56,6 +58,7 @@ declare module 'vue' {
     IEpStarFilled: typeof import('~icons/ep/star-filled')['default']
     IEpUpload: typeof import('~icons/ep/upload')['default']
     IEpVideoPlay: typeof import('~icons/ep/video-play')['default']
+    LoggingSettings: typeof import('./components/logging/LoggingSettings.vue')['default']
     NameEditor: typeof import('./components/proxy/NameEditor.vue')['default']
     ProxyList: typeof import('./components/proxy/ProxyList.vue')['default']
     ProxyNodeContent: typeof import('./components/proxy/ProxyNodeContent.vue')['default']
@@ -75,5 +78,8 @@ declare module 'vue' {
     ScriptTree: typeof import('./components/script/ScriptTree.vue')['default']
     ScriptView: typeof import('./components/script/ScriptView.vue')['default']
     Sidebar: typeof import('./components/proxy/Sidebar.vue')['default']
+  }
+  export interface GlobalDirectives {
+    vLoading: typeof import('element-plus/es')['ElLoadingDirective']
   }
 }
