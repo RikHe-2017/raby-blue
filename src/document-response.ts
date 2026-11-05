@@ -20,8 +20,8 @@ import {
 } from './proxy/debugger-errors.ts'
 import type { ProxySuccessObserver } from './proxy/success-notifications'
 import { logError, logWarn } from './utils/logger.ts'
-import { changedHeaders } from './logging/model'
-import { logProxyRequest } from './logging/proxy'
+import { createFlowLogger, type FlowLogger } from './logging/flow-logger'
+import { createDebuggerLogObserver } from './logging/debugger-observer'
 
 interface PausedRequest {
   requestId: string
@@ -51,14 +51,17 @@ interface PausedOperation {
   finished: boolean
   command?: string
   controller?: AbortController
+  owner?: ProxyRequestOwner
 }
 
 class InterceptionEnded extends Error {}
 
 export function createResponseReplacement(
   notifications?: ProxySuccessObserver,
-  onUserCancelled?: () => void | Promise<void>
+  onUserCancelled?: () => void | Promise<void>,
+  logs: FlowLogger = createFlowLogger()
 ) {
+  const logObserver = createDebuggerLogObserver(logs)
   let rules: ProxyRule[] = []
   let resourceTypes: RequestType[] = []
   let debuggingCancelled = false
@@ -69,15 +72,11 @@ export function createResponseReplacement(
   const connecting = new Map<number, Promise<void>>()
   const dismissed = new Set<number>()
   const pending = new Map<number, Set<AbortController>>()
-  const errors = new Map<number, string>()
   const sessions = new Map<string, Session>()
   const unsupportedSessions = new WeakSet<Session>()
   const pausedOperations = new Map<string, PausedOperation>()
   const networkRequests = new Map<string, ProxyRequestOwner>()
-  const successes = new Map<
-    string,
-    { complete: () => void; failed?: (reason: string) => void; applied: boolean; loaded: boolean }
-  >()
+  const successes = new Map<string, { complete: () => void; applied: boolean; loaded: boolean }>()
   const requestOwners = new Map<
     string,
     {
@@ -115,9 +114,31 @@ export function createResponseReplacement(
     if (!isCurrentOperation(operation) || operation.sending) throw new InterceptionEnded()
     operation.sending = true
     operation.command = method
+    logObserver.onCommandStarting({
+      session: operation.session,
+      event: operation.event,
+      owner: operation.owner,
+      method,
+      params
+    })
     try {
       await chrome.debugger.sendCommand(operation.session, method, params)
+      logObserver.onCommandSucceeded({
+        session: operation.session,
+        event: operation.event,
+        owner: operation.owner,
+        method,
+        params
+      })
       operation.finished = true
+    } catch (error) {
+      logObserver.onCommandFailed({
+        session: operation.session,
+        event: operation.event,
+        method,
+        params
+      })
+      throw error
     } finally {
       operation.sending = false
     }
@@ -156,6 +177,7 @@ export function createResponseReplacement(
   }
 
   const forgetSessions = (tabId: number) => {
+    logObserver.cancelScope({ tabId })
     clearRedirects(tabId)
     for (const [key, session] of sessions) if (session.tabId === tabId) sessions.delete(key)
     for (const [key, operation] of pausedOperations) {
@@ -164,18 +186,6 @@ export function createResponseReplacement(
         pausedOperations.delete(key)
       }
     }
-  }
-
-  const showError = async (tabId: number, message: string, context?: Record<string, unknown>) => {
-    errors.set(tabId, message)
-    logError('Response replacement:', message, ...(context ? [context] : []))
-    await chrome.action.setTitle({ tabId, title: `RabyBlue: ${message}` }).catch(() => {})
-  }
-
-  const clearError = async (tabId: number) => {
-    errors.delete(tabId)
-    await chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {})
-    await chrome.action.setTitle({ tabId, title: 'RabyBlue' }).catch(() => {})
   }
 
   const enableSession = async (session: Session) => {
@@ -234,7 +244,6 @@ export function createResponseReplacement(
       }
       attached.delete(tabId)
     }
-    await clearError(tabId)
   }
 
   const attach = async (tabId: number, initializing = false): Promise<void> => {
@@ -264,7 +273,6 @@ export function createResponseReplacement(
         if (!rules.length || debuggingCancelled || revision !== connectionRevision)
           return await detach(tabId)
         await enableSession({ tabId })
-        if (!debuggingCancelled && revision === connectionRevision) await clearError(tabId)
       } catch (error) {
         await detach(tabId).catch(cleanupError => {
           logError('代理调试连接清理失败:', cleanupError)
@@ -276,10 +284,6 @@ export function createResponseReplacement(
           !isUnavailableDebugTarget(error)
         ) {
           dismissed.add(tabId)
-          await showError(
-            tabId,
-            `请求调试连接失败，请刷新页面或重新启用代理后重试：${String(error)}`
-          )
           throw error
         }
       }
@@ -288,6 +292,7 @@ export function createResponseReplacement(
     try {
       await connection.catch(error => {
         if (initializing) throw error
+        logError(String(error))
       })
     } finally {
       if (connecting.get(tabId) === connection) connecting.delete(tabId)
@@ -312,10 +317,9 @@ export function createResponseReplacement(
         return
       }
       const { rule } = binding.owner
+      operation.owner = binding.owner
       if (event.responseErrorReason) {
         if (binding.networkId) successes.delete(networkKey(session, binding.networkId))
-        if (event.responseErrorReason !== 'Aborted')
-          await showError(tabId, `目标请求加载失败：${event.responseErrorReason}`)
         await sendPausedCommand(operation, 'Fetch.continueRequest', {
           requestId: event.requestId
         })
@@ -328,7 +332,6 @@ export function createResponseReplacement(
         (event.responseHeaders ?? []).some(header => header.name.toLowerCase() === 'location')
       if (redirects && binding.rewrittenDocument && rule.requestHeaders?.some(row => row.enabled)) {
         if (binding.networkId) successes.delete(networkKey(session, binding.networkId))
-        await showError(tabId, '已配置请求头时请填写不再跳转的最终目标地址')
         await sendPausedCommand(operation, 'Fetch.failRequest', {
           requestId: event.requestId,
           errorReason: 'Failed'
@@ -353,13 +356,15 @@ export function createResponseReplacement(
         binding.success.applied = true
         finishSuccess(binding.success)
       }
-      await clearError(tabId)
       return
     }
     const networkOwner = event.networkId
       ? networkRequests.get(networkKey(session, event.networkId))
       : undefined
     const owner = getProxyRequestOwner(event.request.url, undefined, rules, networkOwner)
+    operation.owner = owner
+    if (owner && event.networkId && !networkOwner)
+      networkRequests.set(networkKey(session, event.networkId), owner)
     const match =
       owner &&
       owner.target !== event.request.url &&
@@ -380,31 +385,13 @@ export function createResponseReplacement(
       : {}
     const notificationComplete =
       owner && (match || directHeaderOnly) ? beginSuccess(tabId, owner.rule) : undefined
-    const complete =
-      owner && (match || hasHeaderSettings(owner.rule))
-        ? () => {
-            logProxyRequest(
-              event.request.url,
-              owner.target,
-              owner.rule.name,
-              changedHeaders(event.request.headers, requestHeaders.headers ?? [])
-            )
-            notificationComplete?.()
-          }
-        : undefined
+    const complete = notificationComplete
     const success =
       complete && event.networkId
         ? {
             complete,
             applied: false,
-            loaded: false,
-            failed: (reason: string) =>
-              logError('代理请求失败', {
-                sourceUrl: event.request.url,
-                targetUrl: owner?.target,
-                ruleName: owner?.rule.name,
-                reason
-              })
+            loaded: false
           }
         : undefined
     if (success) successes.set(networkKey(session, event.networkId!), success)
@@ -449,6 +436,7 @@ export function createResponseReplacement(
     requests.add(controller)
     pending.set(tabId, requests)
     const timer = setTimeout(() => controller.abort(), 15000)
+    let readingTarget = false
     try {
       if (event.resourceType === 'EventSource' || event.resourceType === 'WebSocket')
         throw new Error('持续流式响应和 WebSocket 暂不支持整包响应替换')
@@ -461,6 +449,7 @@ export function createResponseReplacement(
         body = result.postData
       }
       const method = event.request.method
+      readingTarget = true
       const response = await fetch(match.target, {
         method,
         headers: mergeHeaderSettings(
@@ -474,6 +463,7 @@ export function createResponseReplacement(
         signal: controller.signal
       })
       const bytes = new Uint8Array(await response.arrayBuffer())
+      readingTarget = false
       // Chunk the conversion to avoid overflowing the call stack for large responses.
       let binary = ''
       for (let offset = 0; offset < bytes.length; offset += 32768)
@@ -491,7 +481,6 @@ export function createResponseReplacement(
       } catch {
         /* Page hints are best-effort. */
       }
-      await clearError(tabId)
     } catch (error) {
       if (
         error instanceof InterceptionEnded ||
@@ -500,10 +489,8 @@ export function createResponseReplacement(
       )
         return
       if (attached.has(tabId) && rules.length) {
-        const headerHint = match.rule.requestHeaders?.some(row => row.enabled)
-          ? '；已配置请求头时请填写不再跳转的最终目标地址'
-          : ''
-        await showError(tabId, `目标请求读取失败：${String(error)}${headerHint}`)
+        if (readingTarget) logObserver.targetFailed(session, event, error)
+        else logError(String(error))
         await sendPausedCommand(operation, 'Fetch.failRequest', {
           requestId: event.requestId,
           errorReason: 'Failed'
@@ -519,6 +506,16 @@ export function createResponseReplacement(
   chrome.debugger.onEvent.addListener((session, method, params) => {
     const activeSession = sessions.get(sessionKey(session))
     if (!activeSession || !isCurrentSession(activeSession)) return
+    if (method === 'Fetch.requestPaused') {
+      const event = params as PausedRequest
+      const binding = requestOwners.get(networkKey(session, event.requestId))
+      if (!event.networkId && binding?.networkId)
+        params = { ...event, networkId: binding.networkId }
+    }
+    const observed = params as { requestId?: string; networkId?: string } | undefined
+    const observedId = method === 'Fetch.requestPaused' ? observed?.networkId : observed?.requestId
+    const firstRequest = !observedId || !networkRequests.has(networkKey(session, observedId))
+    logObserver.onEvent(session, method, params, firstRequest)
     if (method === 'Network.requestWillBeSent') {
       const event = params as {
         requestId: string
@@ -536,8 +533,6 @@ export function createResponseReplacement(
       else networkRequests.delete(key)
     } else if (method === 'Network.loadingFinished' || method === 'Network.loadingFailed') {
       const networkId = (params as { requestId: string }).requestId
-      const failed = params as { canceled?: boolean; errorText?: string }
-      const canceled = failed.canceled || failed.errorText === 'net::ERR_ABORTED'
       for (const [key, operation] of pausedOperations) {
         if (operation.session === activeSession && operation.event.networkId === networkId) {
           cancelOperation(operation)
@@ -550,8 +545,6 @@ export function createResponseReplacement(
         success.loaded = true
         finishSuccess(success)
       }
-      if (success && method === 'Network.loadingFailed' && !canceled)
-        success.failed?.(failed.errorText ?? '请求加载失败')
       networkRequests.delete(networkKey(session, networkId))
       for (const [key, binding] of requestOwners) {
         if (
@@ -559,11 +552,6 @@ export function createResponseReplacement(
           binding.networkId === networkId
         ) {
           requestOwners.delete(key)
-          if (method === 'Network.loadingFailed' && !canceled && binding.rewrittenDocument)
-            void showError(
-              session.tabId!,
-              `目标文档加载失败：${(params as { errorText: string }).errorText}`
-            )
         }
       }
     } else if (method === 'Fetch.requestPaused') {
@@ -600,15 +588,7 @@ export function createResponseReplacement(
             return
           }
           if (session.tabId !== undefined) {
-            const url = new URL(event.request.url)
-            await showError(session.tabId, `头设置或响应替换失败：${String(error)}`, {
-              tabId: session.tabId,
-              sessionId: session.sessionId,
-              requestId: event.requestId,
-              resourceType: event.resourceType,
-              command: operation.command,
-              url: url.origin + url.pathname
-            }).catch(() => {})
+            logError(String(error))
           }
           await sendPausedCommand(operation, 'Fetch.failRequest', {
             requestId: event.requestId,
@@ -638,6 +618,7 @@ export function createResponseReplacement(
         })
     } else if (method === 'Target.detachedFromTarget') {
       const child = params as { sessionId: string }
+      logObserver.cancelScope({ tabId: session.tabId, sessionId: child.sessionId })
       sessions.delete(`${session.tabId}:${child.sessionId}`)
       const prefix = `${session.tabId}:${child.sessionId}:`
       for (const key of networkRequests.keys())
@@ -699,14 +680,10 @@ export function createResponseReplacement(
     if (!/^https?:\/\//.test(event.url)) return
     if (scoped && event.tabId !== activeTabId) return
     if (event.frameId === 0)
-      void reconnectOnNavigation(event.tabId).catch(error =>
-        showError(event.tabId, `请求替换连接检查失败：${String(error)}`)
-      )
+      void reconnectOnNavigation(event.tabId).catch(error => {
+        logError(String(error))
+      })
     else void attach(event.tabId)
-  })
-  chrome.webNavigation.onErrorOccurred.addListener(event => {
-    const message = errors.get(event.tabId)
-    if (message) void showError(event.tabId, message)
   })
   chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     if (scoped && tabId !== activeTabId) return
@@ -717,7 +694,6 @@ export function createResponseReplacement(
   chrome.tabs.onRemoved.addListener(tabId => {
     attached.delete(tabId)
     dismissed.delete(tabId)
-    errors.delete(tabId)
     pending.get(tabId)?.forEach(controller => controller.abort())
     pending.delete(tabId)
     forgetSessions(tabId)
@@ -732,6 +708,7 @@ export function createResponseReplacement(
     ) {
       signal?.throwIfAborted()
       const abort = () => {
+        logObserver.cancelScope({})
         rules = []
         headerRules = []
         connectionRevision++
@@ -767,6 +744,7 @@ export function createResponseReplacement(
         headerRules = nextHeaderRules
         const wasEnabled = !!rules.length
         rules = nextTypes.length || headerRules.length ? nextRules : []
+        logObserver.update(rules, nextTypes, scope)
         if (targetChanged) {
           scoped = scope !== undefined
           activeTabId = scope?.tabId
@@ -784,6 +762,7 @@ export function createResponseReplacement(
           await Promise.allSettled(late.map(detach))
         }
         if (!rules.length) {
+          logObserver.cancelScope({})
           debuggingCancelled = false
           connectionRevision++
           clearRedirects()

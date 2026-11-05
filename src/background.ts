@@ -10,6 +10,8 @@ import { createProxyConfigPersistence } from './proxy/config-persistence'
 import { createProxyApplication } from './proxy/application'
 import { startLogging } from './logging/background'
 import { createProxyLogObserver } from './logging/proxy'
+import { createFlowLogger } from './logging/flow-logger'
+import { executeScriptRequest, injectScript } from './script-execution'
 
 startLogging()
 
@@ -19,17 +21,19 @@ const proxyConfigPersistence = createProxyConfigPersistence({
   write: config => storage.set('proxyConfig', config)
 })
 const notifications = createProxySuccessNotifications(notificationIcon)
-const proxyLogs = createProxyLogObserver()
+const flowLogs = createFlowLogger()
+const proxyLogs = createProxyLogObserver(flowLogs)
 const readActiveTabId = async () =>
   (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id
 const proxyManager = new ProxyManager(
   {
     redirect: new RedirectProxy(),
-    response: new ResponseProxy(notifications, () => proxyConfigPersistence.disable())
+    response: new ResponseProxy(notifications, () => proxyConfigPersistence.disable(), flowLogs)
   },
-  (rules, types) => {
+  (rules, types, scope) => {
     notifications.update(rules, types)
-    proxyLogs.update(rules, types)
+    proxyLogs.update(rules, types, scope)
+    if (scope && !rules.length) flowLogs.cancelAllProxies()
   },
   { readActiveTabId }
 )
@@ -45,6 +49,7 @@ const proxyApplication = createProxyApplication({
 
 const refreshProxyConfiguration = () =>
   proxyApplication.refresh().catch(error => {
+    flowLogs.cancelAllProxies()
     logError('Proxy configuration update failed:', error)
   })
 
@@ -83,49 +88,13 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   }
 
   if (request.action === 'executeScript') {
-    // 获取当前活动标签页
-    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-      if (tabs[0]?.id) {
-        const tabId = tabs[0].id
-
-        // 将代码作为参数传递，在函数内部使用 Function 构造函数
-        // 使用 world: 'MAIN' 可能有助于绕过某些 CSP 限制
-        const executeCode = function (userCode: string) {
-          try {
-            const func = new Function(userCode)
-            return func()
-          } catch (error) {
-            throw error
-          }
-        }
-
-        chrome.scripting
-          .executeScript({
-            target: { tabId },
-            func: executeCode,
-            args: [request.code],
-            injectImmediately: true,
-            world: 'MAIN' // 在页面的主世界中执行
-          })
-          .then(results => {
-            sendResponse({ success: true, results })
-          })
-          .catch(error => {
-            logError('Script execution error:', error)
-            sendResponse({
-              success: false,
-              error: error.message || '脚本执行失败'
-            })
-          })
-      } else {
-        sendResponse({
-          success: false,
-          error: '未找到活动标签页'
-        })
-      }
-    })
-
-    // 返回true表示异步响应
+    void executeScriptRequest(request, {
+      logs: flowLogs,
+      createExecutionId: () => crypto.randomUUID(),
+      readActiveTab: async () =>
+        (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id,
+      inject: injectScript
+    }).then(sendResponse)
     return true
   }
 })

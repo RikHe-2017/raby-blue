@@ -7,6 +7,7 @@ import { createTestEvent as event } from './test-utils/fixtures'
 import type { DebugCommand, DebugSession } from './test-utils/fixtures'
 import { setLogSink } from './utils/logger'
 import type { LogEntry } from './logging/model'
+import { createFlowLogger } from './logging/flow-logger'
 const settle = async () => {
   for (let count = 0; count < 8; count++) await new Promise(resolve => setImmediate(resolve))
 }
@@ -21,6 +22,89 @@ const rules: ProxyRule[] = [
     targetUrl: 'http://localhost:8098/'
   }
 ]
+
+test('failed responses keep one contextual log without title display or navigation replay', async () => {
+  const fixture = browserFixture()
+  const setTitle = vi.spyOn(fixture.chrome.action, 'setTitle')
+  vi.stubGlobal('chrome', fixture.chrome)
+  const entries: LogEntry[] = []
+  setLogSink(async entry => {
+    entries.push(entry)
+  })
+  const driver = createResponseReplacement()
+  const sourceUrl = 'http://example.test/page?token=original'
+  const targetUrl = 'http://localhost:8098/page?token=original'
+  try {
+    await driver.update(rules)
+    const paused = {
+      requestId: 'failed-doc',
+      networkId: 'failed-net',
+      resourceType: 'Document',
+      request: { url: sourceUrl, method: 'GET', headers: {} }
+    }
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', paused)
+    await settle()
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      ...paused,
+      request: { ...paused.request, url: targetUrl },
+      responseErrorReason: 'ConnectionRefused'
+    })
+    await settle()
+    const context = { sourceUrl, targetUrl, ruleName: 'test' }
+    expect(entries).toHaveLength(1)
+    expect(entries[0].message).toBe('代理请求失败')
+    expect(entries[0].details).toEqual([
+      expect.objectContaining({ ...context, reason: 'ConnectionRefused' })
+    ])
+    expect(setTitle).not.toHaveBeenCalled()
+    expect(fixture.state.badges).toEqual([])
+    expect(fixture.chrome.webNavigation.onErrorOccurred.size).toBe(0)
+    fixture.chrome.webNavigation.onErrorOccurred.emit({ tabId: 1, frameId: 0 })
+    await settle()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].details).toEqual([
+      expect.objectContaining({ ...context, reason: 'ConnectionRefused' })
+    ])
+  } finally {
+    await driver.update([], [])
+    setLogSink(async () => {})
+  }
+})
+
+test('replacement fetch failures also identify the original request and matched configuration', async () => {
+  const fixture = browserFixture()
+  const originalFetch = globalThis.fetch
+  vi.stubGlobal('chrome', fixture.chrome)
+  vi.stubGlobal('fetch', async () => {
+    throw new Error('offline')
+  })
+  const entries: LogEntry[] = []
+  setLogSink(async entry => {
+    entries.push(entry)
+  })
+  const driver = createResponseReplacement()
+  try {
+    await driver.update(rules, ['script'])
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      requestId: 'script',
+      resourceType: 'Script',
+      request: { url: 'http://example.test/main.js', method: 'GET', headers: {} }
+    })
+    await settle()
+    expect(entries.at(-1)?.details).toEqual([
+      expect.objectContaining({
+        sourceUrl: 'http://example.test/main.js',
+        targetUrl: 'http://localhost:8098/main.js',
+        ruleName: 'test',
+        reason: 'Error: offline'
+      })
+    ])
+  } finally {
+    await driver.update([], [])
+    vi.stubGlobal('fetch', originalFetch)
+    setLogSink(async () => {})
+  }
+})
 
 test.each([false, true])(
   'header-only logging waits for completion, independent of notification: failed=%s',
@@ -71,12 +155,12 @@ test.each([false, true])(
       expect(logs).toHaveLength(failed ? 0 : 1)
       if (!failed)
         expect(logs[0].details).toEqual([
-          {
+          expect.objectContaining({
             sourceUrl: request.request.url,
             targetUrl: request.request.url,
             ruleName: 'test',
             requestHeaders: { Authorization: 'Bearer original' }
-          }
+          })
         ])
     } finally {
       await driver.update([], [])
@@ -84,6 +168,161 @@ test.each([false, true])(
     }
   }
 )
+test.each([false, true])(
+  'network terminal before command resolution is recorded once: failed=%s',
+  async failed => {
+    const fixture = browserFixture()
+    vi.stubGlobal('chrome', fixture.chrome)
+    const entries: LogEntry[] = []
+    setLogSink(async entry => {
+      entries.push(entry)
+    })
+    let release!: () => void
+    fixture.state.onCommand = async (_session, method) => {
+      if (method === 'Fetch.continueRequest')
+        await new Promise<void>(resolve => {
+          release = resolve
+        })
+    }
+    const driver = createResponseReplacement()
+    try {
+      await driver.update(rules)
+      fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+        requestId: 'early',
+        networkId: 'early-net',
+        resourceType: 'Document',
+        request: { url: 'http://example.test/early', method: 'GET', headers: {} }
+      })
+      await settle()
+      fixture.chrome.debugger.onEvent.emit(
+        { tabId: 1 },
+        failed ? 'Network.loadingFailed' : 'Network.loadingFinished',
+        {
+          requestId: 'early-net',
+          ...(failed ? { errorText: 'net::ERR_CONNECTION_REFUSED' } : {})
+        }
+      )
+      expect(entries).toHaveLength(0)
+      release()
+      await settle()
+      expect(entries).toHaveLength(1)
+      expect(entries[0].message).toBe(failed ? '代理请求失败' : '代理请求已处理')
+      expect(entries[0].details).toEqual([
+        expect.objectContaining({
+          sourceUrl: 'http://example.test/early',
+          targetUrl: 'http://localhost:8098/early'
+        })
+      ])
+    } finally {
+      await driver.update([], [])
+      setLogSink(async () => {})
+    }
+  }
+)
+
+test('failed proxy command cancels business trace before synthetic network failure', async () => {
+  const fixture = browserFixture()
+  vi.stubGlobal('chrome', fixture.chrome)
+  const entries: LogEntry[] = []
+  setLogSink(async entry => {
+    entries.push(entry)
+  })
+  fixture.state.onCommand = async (_session, method) => {
+    if (method === 'Fetch.continueRequest') throw Error('bad command')
+    if (method === 'Fetch.failRequest')
+      fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Network.loadingFailed', {
+        requestId: 'net',
+        errorText: 'net::ERR_FAILED'
+      })
+  }
+  const driver = createResponseReplacement()
+  try {
+    await driver.update(rules)
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      requestId: 'command',
+      networkId: 'net',
+      resourceType: 'Document',
+      request: { url: 'http://example.test/command', method: 'GET', headers: {} }
+    })
+    await settle()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].message).toBe('Error: bad command')
+    expect(entries[0].details).toEqual([])
+  } finally {
+    await driver.update([], [])
+    setLogSink(async () => {})
+  }
+})
+
+test('fallback fulfillment command errors remain ordinary errors, not target network failures', async () => {
+  const fixture = browserFixture()
+  vi.stubGlobal('chrome', fixture.chrome)
+  vi.stubGlobal('fetch', async () => new Response('local'))
+  const entries: LogEntry[] = []
+  setLogSink(async entry => {
+    entries.push(entry)
+  })
+  fixture.state.onCommand = (_session, method) => {
+    if (method === 'Fetch.fulfillRequest') throw Error('fulfillment command failed')
+  }
+  const driver = createResponseReplacement()
+  try {
+    await driver.update(rules, ['script'])
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      requestId: 'fallback-command',
+      resourceType: 'Script',
+      request: { url: 'http://example.test/a.js', method: 'GET', headers: {} }
+    })
+    await settle()
+    expect(entries).toHaveLength(1)
+    expect(entries[0].message).toBe('Error: fulfillment command failed')
+    expect(entries[0].details).toEqual([])
+  } finally {
+    await driver.update([], [])
+    setLogSink(async () => {})
+    vi.unstubAllGlobals()
+  }
+})
+
+test('unavailable log storage does not suppress page success notifications', async () => {
+  const fixture = browserFixture()
+  vi.stubGlobal('chrome', fixture.chrome)
+  const complete = vi.fn()
+  const driver = createResponseReplacement(
+    { begin: () => complete },
+    undefined,
+    createFlowLogger({
+      write: () => {
+        throw Error('unavailable storage')
+      }
+    })
+  )
+  try {
+    await driver.update(rules)
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      requestId: 'notice',
+      networkId: 'notice-net',
+      resourceType: 'Document',
+      request: { url: 'http://example.test/page', method: 'GET', headers: {} }
+    })
+    await settle()
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Fetch.requestPaused', {
+      requestId: 'notice',
+      networkId: 'notice-net',
+      resourceType: 'Document',
+      responseStatusCode: 200,
+      request: { url: 'http://localhost:8098/page', method: 'GET', headers: {} }
+    })
+    await settle()
+    fixture.chrome.debugger.onEvent.emit({ tabId: 1 }, 'Network.loadingFinished', {
+      requestId: 'notice-net'
+    })
+    expect(complete).toHaveBeenCalledOnce()
+  } finally {
+    await driver.update([], [])
+  }
+})
+
 interface BrowserState {
   connected: boolean
   attachCount: number
@@ -677,9 +916,7 @@ test('real header command failures are logged without red badges and fail the pa
     expect(fixture.state.badges.some(item => item.text === '!')).toBe(false)
     expect(console.log).toHaveBeenCalledWith(
       '[error]:',
-      'Response replacement:',
-      expect.stringContaining('Invalid header name'),
-      expect.any(Object)
+      expect.stringContaining('Invalid header name')
     )
     expect(fixture.state.commands.filter(item => item.method === 'Fetch.failRequest').length).toBe(
       1

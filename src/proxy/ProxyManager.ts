@@ -44,12 +44,16 @@ export class ProxyManager {
   private cleanupRequired = false
   private readonly initializationTimeoutMs: number
   private readonly cleanupTimeoutMs: number
-  private readonly onApplied: (rules: ProxyRule[], types: RequestType[]) => void
+  private readonly onApplied: (
+    rules: ProxyRule[],
+    types: RequestType[],
+    scope?: { tabId?: number }
+  ) => void
   private readonly readActiveTabId?: () => Promise<number | undefined>
 
   constructor(
     strategies: Record<ProxyMode, ProxyStrategy>,
-    onApplied = (_rules: ProxyRule[], _types: RequestType[]) => {},
+    onApplied = (_rules: ProxyRule[], _types: RequestType[], _scope?: { tabId?: number }) => {},
     options: TransactionOptions = {}
   ) {
     this.strategies = strategies
@@ -59,9 +63,10 @@ export class ProxyManager {
     this.readActiveTabId = options.readActiveTabId
   }
 
-  private notifyApplied(rules: ProxyRule[], types: RequestType[]) {
+  private notifyApplied(rules: ProxyRule[], types: RequestType[], scope?: { tabId?: number }) {
     try {
-      this.onApplied(rules, types)
+      if (scope) this.onApplied(rules, types, scope)
+      else this.onApplied(rules, types)
     } catch (error) {
       logWarn('Proxy notification setup failed:', error)
     }
@@ -136,7 +141,11 @@ export class ProxyManager {
               controller.signal.throwIfAborted()
               this.appliedPolicy = signature
               this.appliedConfiguration = configuration
-              this.notifyApplied(plan.redirect.rules, plan.redirect.resourceTypes)
+              this.notifyApplied(
+                plan.redirect.rules,
+                plan.redirect.resourceTypes,
+                this.readActiveTabId ? { tabId: activeTabId } : undefined
+              )
             },
             this.initializationTimeoutMs,
             '代理配置初始化超时',
@@ -144,7 +153,7 @@ export class ProxyManager {
           )
         } catch (error) {
           controller.abort()
-          this.notifyApplied([], [])
+          this.notifyApplied([], [], this.readActiveTabId ? {} : undefined)
           this.appliedPolicy = ''
           this.appliedConfiguration = ''
           const errors = await this.cleanup()
@@ -164,7 +173,7 @@ export class ProxyManager {
       .then(async () => {
         this.appliedPolicy = ''
         this.appliedConfiguration = ''
-        this.notifyApplied([], [])
+        this.notifyApplied([], [], this.readActiveTabId ? {} : undefined)
         const errors = await this.cleanup()
         if (errors.length) throw new ProxyApplicationError('代理停用失败', errors)
       })

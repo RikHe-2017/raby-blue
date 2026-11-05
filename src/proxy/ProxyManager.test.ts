@@ -127,3 +127,26 @@ test('hanging cleanup has a deadline and is reported as unconfirmed cleanup', as
   await vi.advanceTimersByTimeAsync(151)
   await rejection
 })
+
+test('log observer scope is exactly the applied snapshot, including no active tab', async () => {
+  const f = fixture()
+  const applied = vi.fn()
+  let tabId: number | undefined = 7
+  const manager = new ProxyManager(f.strategies, applied, { readActiveTabId: async () => tabId })
+  await manager.refresh(async () => config)
+  expect(applied).toHaveBeenLastCalledWith(expect.any(Array), expect.any(Array), { tabId: 7 })
+  expect(f.strategies.response.update).toHaveBeenLastCalledWith(
+    expect.objectContaining({ tabId: 7 }),
+    expect.any(AbortSignal)
+  )
+  tabId = undefined
+  await manager.refresh(async () => config)
+  expect(applied).toHaveBeenLastCalledWith(expect.any(Array), expect.any(Array), {
+    tabId: undefined
+  })
+  await manager.dispose()
+  expect(applied).toHaveBeenLastCalledWith([], [], {})
+  vi.mocked(f.strategies.redirect.update).mockRejectedValueOnce(Error('apply failed'))
+  await expect(manager.refresh(async () => config)).rejects.toThrow('apply failed')
+  expect(applied).toHaveBeenLastCalledWith([], [], {})
+})

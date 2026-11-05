@@ -270,14 +270,13 @@
         // 在扩展环境中，通过Chrome Extension API执行脚本
         const response = await chrome.runtime.sendMessage({
           action: 'executeScript',
-          code: scriptContent.value
+          code: scriptContent.value,
+          scriptId: activeScript.value.id,
+          scriptName: activeScript.value.name
         })
 
         if (response && response.success) {
           ElMessage.success('脚本执行成功')
-          if (response.results) {
-            logInfo('脚本执行完成')
-          }
         } else {
           ElMessage.error(response?.error || '脚本执行失败')
         }
