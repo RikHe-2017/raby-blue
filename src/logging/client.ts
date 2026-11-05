@@ -1,8 +1,8 @@
-import type { LogEntry, LogFilter } from './model'
+import type { LogEntry, LogFilter, LogPageFilter } from './model'
 
 export async function requestLogs<T>(
-  operation: 'record' | 'export' | 'clear' | 'cleanup',
-  payload?: LogEntry | LogFilter
+  operation: 'record' | 'export' | 'clear' | 'cleanup' | 'page',
+  payload?: LogEntry | LogFilter | LogPageFilter
 ): Promise<T> {
   const result = (await chrome.runtime.sendMessage({ action: 'logging', operation, payload })) as
     | {

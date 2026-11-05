@@ -22,6 +22,25 @@ export interface LogFilter {
   levels?: LogLevel[]
 }
 
+export interface LogPageFilter {
+  start?: number
+  end?: number
+  level: LogLevel
+  page: number
+  pageSize: number
+}
+
+export interface LogPage {
+  entries: LogEntry[]
+  total: number
+}
+
+export function todayRange(timestamp: number): [string, string] {
+  const date = new Date(timestamp)
+  const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  return [day, day]
+}
+
 const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 

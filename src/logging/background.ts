@@ -1,7 +1,7 @@
 import { createLogDatabase } from './database'
 import { createLogManager } from './manager'
 import { LOG_LEVELS, normalizeLoggingPreferences } from './model'
-import type { LogEntry, LogFilter } from './model'
+import type { LogEntry, LogFilter, LogPageFilter } from './model'
 import { setLogSink } from '../utils/logger'
 
 const ALARM_NAME = 'raby-blue-log-retention'
@@ -36,6 +36,23 @@ export function startLogging() {
     if (!sender.url?.startsWith(chrome.runtime.getURL(''))) return
     const run = async () => {
       switch (request.operation) {
+        case 'page': {
+          const filter = request.payload as LogPageFilter | undefined
+          if (
+            !filter ||
+            !LOG_LEVELS.includes(filter.level) ||
+            !Number.isSafeInteger(filter.page) ||
+            filter.page < 1 ||
+            !Number.isSafeInteger(filter.pageSize) ||
+            filter.pageSize < 1 ||
+            filter.pageSize > 100 ||
+            !Number.isSafeInteger((filter.page - 1) * filter.pageSize) ||
+            (filter.start !== undefined && !Number.isFinite(filter.start)) ||
+            (filter.end !== undefined && !Number.isFinite(filter.end))
+          )
+            throw new Error('无效的日志分页条件')
+          return manager.page(filter)
+        }
         case 'record': {
           const entry = request.payload as LogEntry | undefined
           if (

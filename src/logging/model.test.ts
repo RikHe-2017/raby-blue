@@ -4,7 +4,8 @@ import {
   normalizeLoggingPreferences,
   retentionCutoff,
   changedHeaders,
-  localDateFilter
+  localDateFilter,
+  todayRange
 } from './model'
 import { mergeUserPreferences, normalizeUserPreferences } from '../stores/user-preferences-model'
 
@@ -68,4 +69,5 @@ test('date filtering includes the entire selected local end date, with no range 
   const filter = localDateFilter(['2026-11-01', '2026-11-04'])
   expect(filter.start).toBe(new Date(2026, 10, 1).getTime())
   expect(filter.end).toBe(new Date(2026, 10, 5).getTime() - 1)
+  expect(todayRange(new Date(2026, 10, 5, 0, 1).getTime())).toEqual(['2026-11-05', '2026-11-05'])
 })

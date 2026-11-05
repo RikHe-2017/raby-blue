@@ -40,7 +40,8 @@ test('failed writes reject without blocking the next operation or recursively lo
       },
       clear: async () => {},
       prune: async () => {},
-      query: async () => []
+      query: async () => [],
+      page: async () => ({ entries: [], total: 0 })
     },
     async () => ({ levels: ['error'], retentionDays: 30 })
   )
@@ -50,4 +51,20 @@ test('failed writes reject without blocking the next operation or recursively lo
   fail = false
   await manager.record(createLogEntry('error', 'background', ['second'], Date.now()))
   expect(entries).toHaveLength(1)
+})
+
+test('viewing logs cleans expired entries and does not include future timestamps', async () => {
+  const db = createLogDatabase(`view-manager-${crypto.randomUUID()}`)
+  const now = 40 * 86400000
+  await db.add(createLogEntry('error', 'background', ['expired'], 1))
+  await db.add(createLogEntry('error', 'background', ['current'], now))
+  await db.add(createLogEntry('error', 'background', ['future'], now + 1))
+  const manager = createLogManager(
+    db,
+    async () => ({ levels: ['error'], retentionDays: 30 }),
+    () => now
+  )
+  const result = await manager.page({ level: 'error', page: 1, pageSize: 20 })
+  expect(result.total).toBe(1)
+  expect(result.entries[0].message).toBe('current')
 })

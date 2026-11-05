@@ -5,6 +5,7 @@
   import { LOG_LEVELS, localDateFilter } from '../../logging/model'
   import type { LogEntry, LogLevel, LoggingPreferences } from '../../logging/model'
   import { requestLogs } from '../../logging/client'
+  import LogViewerDialog from './LogViewerDialog.vue'
 
   const emit = defineEmits<{ (event: 'busy-change', value: boolean): void }>()
   const preferences = useUserPreferencesStore()
@@ -13,6 +14,7 @@
   const dates = ref<[string, string]>()
   const levels = ref<LogLevel[]>([...LOG_LEVELS])
   const error = ref('')
+  const viewerVisible = ref(false)
   const retentionOptions = [
     { value: 1, label: '1 天' },
     { value: 7, label: '7 天' },
@@ -100,6 +102,12 @@
 
 <template>
   <div class="logging-settings" v-loading="busy">
+    <section class="logging-settings__section logging-settings__clear" aria-label="日志查看">
+      <h3 class="logging-settings__heading">日志查看</h3>
+      <el-button :disabled="busy" @click="viewerVisible = true"
+        ><el-icon><i-ep-view /></el-icon>查看日志</el-button
+      >
+    </section>
     <section class="logging-settings__section" aria-label="日志保存设置">
       <h3 class="logging-settings__heading">保存设置</h3>
       <div class="logging-settings__row">
@@ -170,6 +178,7 @@
     </section>
     <p v-if="error" class="logging-settings__error" role="alert">{{ error }}</p>
   </div>
+  <LogViewerDialog v-if="viewerVisible" v-model="viewerVisible" />
 </template>
 
 <style scoped lang="scss">

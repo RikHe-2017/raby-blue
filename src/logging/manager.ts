@@ -1,6 +1,6 @@
 import type { createLogDatabase } from './database'
 import { createLogEntry, normalizeLoggingPreferences, retentionCutoff } from './model'
-import type { LogEntry, LogFilter, LoggingPreferences } from './model'
+import type { LogEntry, LogFilter, LoggingPreferences, LogPageFilter } from './model'
 
 export function createLogManager(
   database: ReturnType<typeof createLogDatabase>,
@@ -19,6 +19,13 @@ export function createLogManager(
   }
 
   return {
+    page: (filter: LogPageFilter) => {
+      const upperBound = Math.min(filter.end ?? Infinity, clock())
+      return enqueue(async () => {
+        await cleanup()
+        return database.page({ ...filter, end: upperBound })
+      })
+    },
     record: (entry: LogEntry) =>
       enqueue(async () => {
         const preferences = normalizeLoggingPreferences(await readPreferences())

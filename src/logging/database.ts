@@ -1,4 +1,4 @@
-import type { LogEntry, LogFilter } from './model'
+import type { LogEntry, LogFilter, LogPage, LogPageFilter } from './model'
 
 export function createLogDatabase(name = 'raby-blue-logs') {
   let connection: Promise<IDBDatabase> | undefined
@@ -44,6 +44,36 @@ export function createLogDatabase(name = 'raby-blue-logs') {
   }
 
   return {
+    async page(filter: LogPageFilter): Promise<LogPage> {
+      const start = filter.start ?? 0
+      const end = filter.end ?? Number.MAX_SAFE_INTEGER
+      if (start > end) return { entries: [], total: 0 }
+      const db = await open()
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction('logs', 'readonly')
+        const index = transaction.objectStore('logs').index('levelTimestamp')
+        const range = IDBKeyRange.bound([filter.level, start], [filter.level, end])
+        const count = index.count(range)
+        const request = index.openCursor(range, 'prev')
+        const entries: LogEntry[] = []
+        const offset = (filter.page - 1) * filter.pageSize
+        let skipped = false
+        request.onsuccess = () => {
+          const cursor = request.result
+          if (!cursor) return
+          if (offset && !skipped) {
+            skipped = true
+            cursor.advance(offset)
+            return
+          }
+          entries.push(cursor.value as LogEntry)
+          if (entries.length < filter.pageSize) cursor.continue()
+        }
+        transaction.oncomplete = () => resolve({ entries, total: count.result })
+        transaction.onabort = transaction.onerror = () =>
+          reject(transaction.error ?? new Error('日志查询失败'))
+      })
+    },
     add: (entry: LogEntry) =>
       write(store => {
         store.add(entry)
