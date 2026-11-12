@@ -4,14 +4,15 @@ export default defineManifest(({ command }) => ({
   manifest_version: 3,
   minimum_chrome_version: '125',
   name: command === 'serve' ? 'RabyBlue Dev' : 'RabyBlue',
+  short_name: '蓝兔',
   version: '1.0.0',
-  description: 'Proxy requests with redirects and response replacement',
+  description:
+    '蓝兔是一个为 WEB 研发调试打造的浏览器扩展，可按规则重定向请求、修改请求头和响应头，并管理和执行常用 JavaScript 调试脚本。',
+  homepage_url: 'https://github.com/RikHe-2017/raby-blue',
   permissions: [
     'alarms',
     'storage',
-    'declarativeNetRequest',
     'declarativeNetRequestWithHostAccess',
-    'declarativeNetRequestFeedback',
     'scripting',
     'debugger',
     'webNavigation',

@@ -43,7 +43,7 @@
       ></template>
     </el-input>
   </div>
-  <el-empty
+  <Empty
     v-if="!visibleEntries.length"
     :description="searchText.trim() ? '未找到匹配的脚本' : '暂无收藏的脚本'"
     :image-size="40"

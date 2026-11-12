@@ -43,6 +43,7 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElTree: typeof import('element-plus/es')['ElTree']
+    Empty: typeof import('./components/common/Empty.vue')['default']
     FavoriteButton: typeof import('./components/proxy/FavoriteButton.vue')['default']
     HeaderSettings: typeof import('./components/proxy/HeaderSettings.vue')['default']
     IEpCheck: typeof import('~icons/ep/check')['default']

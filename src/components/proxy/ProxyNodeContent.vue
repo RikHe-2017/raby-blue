@@ -19,15 +19,14 @@
     (event: 'command', command: string, node: ProxyNode): void
   }>()
   const favoriteSummary = computed(() => getProxyFavoriteSummary(props.data))
+  const isActive = computed(() => props.data.id === props.activeItemId)
 </script>
 
 <template>
   <div
     class="proxy-node"
     :class="{
-      'proxy-node--active':
-        (data.type === 'group' && data.id === activeItemId) ||
-        (data.type === 'rule' && data.id === activeItemId)
+      'proxy-node--active': isActive
     }"
     @click.stop="emit('node-click', data)"
   >
@@ -40,6 +39,13 @@
         :aria-label="`启用 ${data.name}`"
         @change="value => emit('set-enabled', data.id, value === true)"
         @click.stop
+      />
+      <img
+        v-if="isActive"
+        class="proxy-node__active-icon"
+        src="/icons/icon16.png"
+        alt=""
+        aria-hidden="true"
       />
       <div class="proxy-node__text">
         <span class="proxy-node__label">{{ data.name }}</span>
@@ -113,6 +119,18 @@
     padding: 0 4px;
     box-sizing: border-box;
     font-size: var(--el-font-size-base);
+  }
+
+  .proxy-node--active .proxy-node__label {
+    color: var(--el-color-primary);
+    font-weight: 600;
+  }
+
+  .proxy-node__active-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    object-fit: contain;
   }
 
   .proxy-node__content {

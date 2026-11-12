@@ -194,6 +194,7 @@
 
 <template>
   <el-tree
+    class="proxy-tree"
     ref="treeRef"
     :data="groups"
     :default-expand-all="!persistState"
@@ -220,3 +221,9 @@
     </template>
   </el-tree>
 </template>
+
+<style lang="scss" scoped>
+  .proxy-tree :deep(.el-tree-node.is-current > .el-tree-node__content) {
+    box-shadow: inset 4px 0 0 var(--el-color-primary);
+  }
+</style>
