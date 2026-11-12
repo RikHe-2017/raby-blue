@@ -20,6 +20,7 @@ import {
 } from './proxy/debugger-errors.ts'
 import type { ProxySuccessObserver } from './proxy/success-notifications'
 import { logError, logWarn } from './utils/logger.ts'
+import { i18n } from './locales'
 import { createFlowLogger, type FlowLogger } from './logging/flow-logger'
 import { createDebuggerLogObserver } from './logging/debugger-observer'
 
@@ -275,7 +276,7 @@ export function createResponseReplacement(
         await enableSession({ tabId })
       } catch (error) {
         await detach(tabId).catch(cleanupError => {
-          logError('代理调试连接清理失败:', cleanupError)
+          logError(i18n.global.t('runtime.debugCleanupFailed'), cleanupError)
           throw cleanupError
         })
         if (
@@ -439,10 +440,10 @@ export function createResponseReplacement(
     let readingTarget = false
     try {
       if (event.resourceType === 'EventSource' || event.resourceType === 'WebSocket')
-        throw new Error('持续流式响应和 WebSocket 暂不支持整包响应替换')
+        throw new Error(i18n.global.t('runtime.streamingUnsupported'))
       let body = getReplacementRequestBody(event.request)
       if (event.request.hasPostData && body === undefined) {
-        if (!event.networkId) throw new Error('无法读取请求正文')
+        if (!event.networkId) throw new Error(i18n.global.t('runtime.requestBodyReadFailed'))
         const result = (await chrome.debugger.sendCommand(session, 'Network.getRequestPostData', {
           requestId: event.networkId
         })) as { postData: string }
@@ -645,10 +646,10 @@ export function createResponseReplacement(
       connectionRevision++
       try {
         void Promise.resolve(onUserCancelled?.()).catch(error =>
-          logError('用户取消调试后关闭代理总控失败:', error)
+          logError(i18n.global.t('runtime.debugCancelCloseFailed'), error)
         )
       } catch (error) {
-        logError('用户取消调试后关闭代理总控失败:', error)
+        logError(i18n.global.t('runtime.debugCancelCloseFailed'), error)
       }
     }
     logWarn('Response replacement detached:', { tabId: session.tabId, reason })
@@ -689,7 +690,10 @@ export function createResponseReplacement(
     if (scoped && tabId !== activeTabId) return
     if (!change.url && change.status !== 'complete') return
     if (/^https?:\/\//.test(tab.url ?? '')) void attach(tabId)
-    else void detach(tabId).catch(error => logError('代理调试连接清理失败:', error))
+    else
+      void detach(tabId).catch(error =>
+        logError(i18n.global.t('runtime.debugCleanupFailed'), error)
+      )
   })
   chrome.tabs.onRemoved.addListener(tabId => {
     attached.delete(tabId)
@@ -816,7 +820,8 @@ export function createResponseReplacement(
           }
         }
         signal?.throwIfAborted()
-        if (signal && debuggingCancelled) throw new Error('用户取消了代理初始化')
+        if (signal && debuggingCancelled)
+          throw new Error(i18n.global.t('runtime.initializationCancelled'))
       } finally {
         signal?.removeEventListener('abort', abort)
       }

@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import ScriptSidebar from './ScriptSidebar.vue'
   import ScriptSection from './ScriptSection.vue'
   import { useScriptStore } from '../../stores/script'
@@ -8,11 +9,12 @@
   import { logError, logInfo } from '../../utils/logger'
 
   const scriptStore = useScriptStore()
+  const { t } = useI18n()
   const configLoaded = ref(false)
   // 内容区域的状态（不需要持久化）
   const activeGroupId = ref<string>('')
   const activeItemId = ref<string>('')
-  const scriptContent = ref('// 请输入你的JS代码')
+  const scriptContent = ref(t('script.defaultContent'))
   const activeItemName = ref('')
   const isNameSaved = ref(false)
   const isContentSaved = ref(false)
@@ -97,7 +99,7 @@
   })
 
   onBeforeUnmount(() => {
-    void flushPendingChanges().catch(() => ElMessage.error('脚本保存失败，请重试'))
+    void flushPendingChanges().catch(() => ElMessage.error(t('script.saveFailed')))
   })
 
   // 监听活动项目变化
@@ -117,12 +119,12 @@
           isContentSaved.value = true
         } else if (activeScript.value) {
           activeItemName.value = activeScript.value.name
-          scriptContent.value = activeScript.value.content || '// 请输入你的JS代码'
+          scriptContent.value = activeScript.value.content || t('script.defaultContent')
           isNameSaved.value = true
           isContentSaved.value = true
         } else {
           activeItemName.value = ''
-          scriptContent.value = '// 请输入你的JS代码'
+          scriptContent.value = t('script.defaultContent')
           isNameSaved.value = false
           isContentSaved.value = false
         }
@@ -149,7 +151,7 @@
       activeGroupId.value = node.type === 'group' ? node.id : node.groupId
       activeItemId.value = node.id
     } catch {
-      ElMessage.error('脚本保存失败，请重试')
+      ElMessage.error(t('script.saveFailed'))
     }
   }
 
@@ -170,7 +172,7 @@
         // 脚本被删除了，清空选中状态
         activeItemId.value = ''
         activeItemName.value = ''
-        scriptContent.value = '// 请输入你的JS代码'
+        scriptContent.value = t('script.defaultContent')
       }
       // 检查当前选中的分组是否还存在
       if (activeGroup.value === null && activeGroupId.value) {
@@ -207,7 +209,7 @@
     }
     nameSaveTimer = setTimeout(() => {
       nameSaveTimer = null
-      void handleSaveItemName().catch(() => ElMessage.error('名称保存失败，请重试'))
+      void handleSaveItemName().catch(() => ElMessage.error(t('script.saveNameFailed')))
     }, 500)
   })
 
@@ -231,7 +233,7 @@
     }
     contentSaveTimer = setTimeout(() => {
       contentSaveTimer = null
-      void saveScriptContent().catch(() => ElMessage.error('脚本内容保存失败，请重试'))
+      void saveScriptContent().catch(() => ElMessage.error(t('script.saveContentFailed')))
     }, 800)
   })
 
@@ -261,7 +263,7 @@
 
   const handleExecuteScript = async () => {
     if (!activeScript.value || !scriptContent.value.trim()) {
-      ElMessage.warning('请先选择并编写脚本')
+      ElMessage.warning(t('script.selectAndWrite'))
       return
     }
 
@@ -276,28 +278,34 @@
         })
 
         if (response && response.success) {
-          ElMessage.success('脚本执行成功')
+          ElMessage.success(t('script.executeSuccess'))
         } else {
-          ElMessage.error(response?.error || '脚本执行失败')
+          ElMessage.error(response?.error || t('script.executeFailed'))
         }
       } else {
         // 在非扩展环境中（如开发环境），直接在当前页面执行
         // 注意：这仅用于开发调试，生产环境应该在扩展中运行
         try {
           const result = eval(scriptContent.value)
-          ElMessage.success('脚本执行成功（开发模式）')
+          ElMessage.success(t('script.executeSuccessDev'))
           if (result !== undefined) {
-            logInfo('脚本执行完成')
+            logInfo(t('runtime.scriptCompleted'))
           }
         } catch (evalError) {
           ElMessage.error(
-            `脚本执行失败: ${evalError instanceof Error ? evalError.message : '未知错误'}`
+            t('script.executeFailedWithMessage', {
+              message: evalError instanceof Error ? evalError.message : t('errors.unknown')
+            })
           )
         }
       }
     } catch (error) {
-      logError('执行脚本失败:', error)
-      ElMessage.error(`执行失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      logError(t('runtime.scriptExecutionFailed'), error)
+      ElMessage.error(
+        t('script.executeFailedGeneric', {
+          message: error instanceof Error ? error.message : t('errors.unknown')
+        })
+      )
     }
   }
 </script>

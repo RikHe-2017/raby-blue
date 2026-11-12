@@ -3,6 +3,7 @@ import { useProxyStore } from '../../stores/proxy'
 import type { ProxyGroup, ProxyNode, ProxyRule } from '../../types/proxy'
 import { isProxyRule } from '../../types/proxy'
 import { getProxyFavoriteSummary } from '../../stores/proxy-rules'
+import { i18n } from '../../locales'
 
 interface ProxyNodeActionEmitter {
   (event: 'edit-rule', data: ProxyNode): void
@@ -16,7 +17,7 @@ export function useProxyNodeActions(emit: ProxyNodeActionEmitter) {
   const handleAddGroup = (parentId?: string) => {
     const newGroup: ProxyGroup = {
       id: crypto.randomUUID(),
-      name: '新分类',
+      name: i18n.global.t('proxy.newGroup'),
       enabled: false,
       type: 'group',
       children: []
@@ -28,7 +29,7 @@ export function useProxyNodeActions(emit: ProxyNodeActionEmitter) {
   const handleAddProxy = (parentId: string) => {
     const newRule: ProxyRule = {
       id: crypto.randomUUID(),
-      name: '新代理',
+      name: i18n.global.t('proxy.newProxy'),
       showSuccessNotification: false,
       sourceUrl: '',
       targetUrl: '',
@@ -53,7 +54,7 @@ export function useProxyNodeActions(emit: ProxyNodeActionEmitter) {
     if (!isProxyRule(ruleData)) return
     const duplicatedRule: ProxyRule = {
       id: crypto.randomUUID(),
-      name: `${ruleData.name} - 副本`,
+      name: i18n.global.t('common.duplicateSuffix', { name: ruleData.name }),
       showSuccessNotification: ruleData.showSuccessNotification === true,
       requestHeaders: ruleData.requestHeaders?.map(row => ({ ...row, id: crypto.randomUUID() })),
       responseHeaders: ruleData.responseHeaders?.map(row => ({ ...row, id: crypto.randomUUID() })),
@@ -75,7 +76,7 @@ export function useProxyNodeActions(emit: ProxyNodeActionEmitter) {
   const handleDeleteRule = (ruleData: ProxyNode) => {
     if (!isProxyRule(ruleData)) return
     proxyStore.deleteRule(ruleData.groupId, ruleData.id)
-    ElMessage.success('代理规则已删除')
+    ElMessage.success(i18n.global.t('proxy.ruleDeleted'))
   }
 
   // 规则下拉菜单命令处理
@@ -92,7 +93,7 @@ export function useProxyNodeActions(emit: ProxyNodeActionEmitter) {
   // 删除分组 - 直接处理
   const handleDeleteGroup = (groupId: string) => {
     proxyStore.deleteGroup(groupId)
-    ElMessage.success('分组已删除')
+    ElMessage.success(i18n.global.t('proxy.groupDeleted'))
   }
 
   const handleNodeCommand = (command: string, data: ProxyNode) => {

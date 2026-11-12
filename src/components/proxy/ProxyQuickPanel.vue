@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed, ref } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import type { ProxyGroup, ProxyNode } from '../../types/proxy'
   import type { ProxyEntry } from './sidebar-projections'
   import { filterProxyEntries, filterProxyGroups } from './sidebar-projections'
@@ -21,6 +22,7 @@
     (event: 'set-favorite', ruleId: string, favorite: boolean): void
   }>()
   const searchText = ref('')
+  const { t } = useI18n()
   const visibleEntries = computed(() => filterProxyEntries(props.entries, searchText.value))
   const treeGroups = computed(() =>
     filterProxyGroups(
@@ -34,8 +36,8 @@
   <div class="quick-panel__search">
     <el-input
       v-model="searchText"
-      placeholder="搜索分类或代理..."
-      aria-label="搜索分类或代理"
+      :placeholder="t('proxy.groupOrProxySearch')"
+      :aria-label="t('proxy.groupOrProxySearchLabel')"
       clearable
     >
       <template #prefix>
@@ -45,7 +47,7 @@
   </div>
   <Empty
     v-if="!visibleEntries.length"
-    :description="searchText.trim() ? '未找到匹配的代理' : emptyText"
+    :description="searchText.trim() ? t('proxy.noMatch') : emptyText"
     :image-size="40"
   />
   <ProxyTree

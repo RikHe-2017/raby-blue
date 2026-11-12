@@ -5,6 +5,7 @@ import type { createProxyConfigPersistence } from './config-persistence'
 import { ProxyApplicationError, withProxyDeadline } from './ProxyManager'
 import type { ProxyManager } from './ProxyManager'
 import { logError } from '../utils/logger'
+import { i18n } from '../locales'
 
 interface Dependencies {
   manager: Pick<ProxyManager, 'refresh' | 'dispose'>
@@ -43,21 +44,27 @@ export function createProxyApplication(dependencies: Dependencies) {
       }
     }
     try {
-      await withProxyDeadline(() => dependencies.persistence.disable(), 5000, '关闭代理总控超时')
+      await withProxyDeadline(
+        () => dependencies.persistence.disable(),
+        5000,
+        i18n.global.t('runtime.proxyCloseTimeout')
+      )
     } catch (disableError) {
-      problems.push(`总控关闭未确认：${String(disableError)}`)
+      problems.push(
+        i18n.global.t('runtime.controllerCloseUnconfirmed', { message: String(disableError) })
+      )
     }
     const next: ProxyRuntimeStatus = {
       phase: 'error',
-      message: `${message}${problems.length ? `；清理或停用未确认：${problems.join('；')}` : '；已停止代理，可重新开启总控重试'}`,
+      message: `${message}${problems.length ? `；${i18n.global.t('runtime.cleanupUnconfirmed', { details: problems.join('；') })}` : `；${i18n.global.t('runtime.proxyStoppedRetry')}`}`,
       cleanupFailed: problems.length > 0
     }
     try {
       await publish(next)
     } catch (publishError) {
-      logError('代理失败状态同步失败:', publishError)
+      logError(i18n.global.t('runtime.proxyConfigApplyFailed'), publishError)
     }
-    logError('代理配置应用失败:', next.message)
+    logError(i18n.global.t('runtime.proxyConfigApplyFailed'), next.message)
     return next
   }
 
@@ -68,7 +75,7 @@ export function createProxyApplication(dependencies: Dependencies) {
           const saved = await withProxyDeadline(
             () => dependencies.readStatus?.() ?? Promise.resolve(undefined),
             5000,
-            '读取代理运行状态超时'
+            i18n.global.t('runtime.runtimeStatusTimeout')
           )
           if (isProxyRuntimeStatus(saved)) status = { ...saved }
           restored = true
@@ -103,7 +110,7 @@ export function createProxyApplication(dependencies: Dependencies) {
         await withProxyDeadline(
           () => dependencies.persistence.save(config, updateEnabled),
           15000,
-          '代理配置保存超时'
+          i18n.global.t('runtime.proxySaveTimeout')
         )
       } catch (error) {
         const failed = await enqueue(() => fail(error))
@@ -113,7 +120,7 @@ export function createProxyApplication(dependencies: Dependencies) {
       if (result.phase === 'error' && failureRevision !== previousFailure)
         throw new Error(result.message)
       if (updateEnabled && config.enabled && result.phase !== 'active') {
-        throw new Error(result.message ?? '代理未能启用，请重试')
+        throw new Error(result.message ?? i18n.global.t('runtime.proxyNotEnabled'))
       }
       return result
     }

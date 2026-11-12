@@ -1,4 +1,5 @@
 import type { LogEntry, LogFilter, LogPageFilter } from './model'
+import { i18n } from '../locales'
 
 export async function requestLogs<T>(
   operation: 'record' | 'export' | 'clear' | 'cleanup' | 'page',
@@ -11,6 +12,7 @@ export async function requestLogs<T>(
         error?: string
       }
     | undefined
-  if (!result?.success) throw new Error(result?.error ?? '日志服务不可用')
+  if (!result?.success)
+    throw new Error(result?.error ?? i18n.global.t('runtime.logServiceUnavailable'))
   return result.data as T
 }

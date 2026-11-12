@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+  import { useI18n } from 'vue-i18n'
   import type { ProxyRuntimeStatus } from '../../proxy/runtime-status'
 
   interface Props {
@@ -13,6 +14,7 @@
 
   defineProps<Props>()
   const emit = defineEmits<Emits>()
+  const { t } = useI18n()
 
   const handleToggle = () => {
     emit('toggle-proxy')
@@ -25,8 +27,8 @@
       <div class="content-header__title">
         <div class="content-header__title-wrapper">
           <div class="content-header__title-content">
-            <span class="content-header__title-text">RabyBlue（欢迎使用蓝兔）</span>
-            <span class="content-header__subtitle">一个浏览器请求代理插件</span>
+            <span class="content-header__title-text">{{ t('proxy.welcomeTitle') }}</span>
+            <span class="content-header__subtitle">{{ t('proxy.description') }}</span>
           </div>
         </div>
       </div>
@@ -41,14 +43,14 @@
             "
             :loading="pending || runtimeStatus?.phase === 'applying'"
             :disabled="pending || runtimeStatus?.phase === 'applying'"
-            aria-label="代理总控"
+            :aria-label="t('proxy.controller')"
             @change="handleToggle"
           />
         </div>
       </div>
     </div>
     <p v-if="runtimeStatus?.phase === 'applying'" class="content-header__status" role="status">
-      代理配置初始化中…
+      {{ t('proxy.initializing') }}
     </p>
     <p
       v-else-if="runtimeStatus?.phase === 'error'"
@@ -62,7 +64,7 @@
       class="content-header__status"
       role="status"
     >
-      代理已就绪
+      {{ t('proxy.ready') }}
     </p>
   </div>
 </template>

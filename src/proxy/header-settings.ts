@@ -1,4 +1,5 @@
 import type { HeaderSetting } from '../types/proxy'
+import { i18n } from '../locales'
 
 export type HeaderDirection = 'request' | 'response'
 
@@ -43,12 +44,12 @@ export function createHeaderSetting(id: string): HeaderSetting {
 
 export function validateHeaderSettings(value: unknown, direction: HeaderDirection): void {
   if (value === undefined) return
-  if (!Array.isArray(value)) throw new Error('头设置必须是数组')
+  if (!Array.isArray(value)) throw new Error(i18n.global.t('runtime.headerArrayRequired'))
   const names = new Set<string>()
   const ids = new Set<string>()
   for (const row of value) {
     if (!row || typeof row.id !== 'string' || !row.id || ids.has(row.id))
-      throw new Error('头设置行 ID 无效或重复')
+      throw new Error(i18n.global.t('runtime.headerIdInvalid'))
     ids.add(row.id)
     if (
       typeof row.enabled !== 'boolean' ||
@@ -56,14 +57,15 @@ export function validateHeaderSettings(value: unknown, direction: HeaderDirectio
       typeof row.value !== 'string' ||
       (row.mode !== undefined && row.mode !== 'overwrite' && row.mode !== 'merge')
     )
-      throw new Error('头设置字段类型错误')
+      throw new Error(i18n.global.t('runtime.headerFieldInvalid'))
     const name = row.name.trim()
-    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) throw new Error('请输入有效的头名称')
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name))
+      throw new Error(i18n.global.t('runtime.headerNameInvalid'))
     const key = name.toLowerCase()
-    if (names.has(key)) throw new Error(`头名称重复：${name}`)
+    if (names.has(key)) throw new Error(i18n.global.t('runtime.headerNameDuplicate', { name }))
     names.add(key)
     if (/[\x00-\x08\x0a-\x1f\x7f-\uffff]/.test(row.value))
-      throw new Error(`头值只支持可打印 ASCII 字符和制表符：${name}`)
+      throw new Error(i18n.global.t('runtime.headerValueInvalid', { name }))
     if (
       transportHeaders.has(key) ||
       key.startsWith('sec-') ||
@@ -71,7 +73,7 @@ export function validateHeaderSettings(value: unknown, direction: HeaderDirectio
       (direction === 'request' && protectedRequestHeaders.has(key)) ||
       (direction === 'response' && (key === 'set-cookie' || key === 'set-cookie2'))
     )
-      throw new Error(`暂不支持修改浏览器或传输层管理的头：${name}`)
+      throw new Error(i18n.global.t('runtime.headerUnsupported', { name }))
   }
 }
 

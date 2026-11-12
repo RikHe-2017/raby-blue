@@ -1,6 +1,7 @@
 import type { ProxyConfig, ProxyGroup, ProxyNode } from '../../types/proxy'
 import type { ScriptConfig, ScriptGroup, ScriptNode } from '../../types/script'
 import { validateHeaderSettings } from '../../proxy/header-settings.ts'
+import { i18n } from '../../locales'
 
 export type ExportScope = 'proxy' | 'script' | 'all'
 export type ImportMode = 'merge' | 'replace'
@@ -30,44 +31,46 @@ const isNonEmptyString = (value: unknown): value is string =>
  */
 function validateConfig(value: unknown, kind: ConfigKind): void {
   if (!isRecord(value) || typeof value.enabled !== 'boolean' || !Array.isArray(value.groups)) {
-    throw new Error('配置必须包含 enabled 开关和 groups 数组')
+    throw new Error(i18n.global.t('runtime.transferEnabledGroupsRequired'))
   }
 
   const ids = new Set<string>()
   const validateNode = (node: unknown, parentId: string | undefined, depth: number) => {
-    if (depth > 100) throw new Error('配置分组嵌套过深')
+    if (depth > 100) throw new Error(i18n.global.t('runtime.transferDepthTooDeep'))
     if (!isRecord(node) || !isNonEmptyString(node.id) || !isNonEmptyString(node.name)) {
-      throw new Error('每个分组和配置都必须有有效的 ID 和名称')
+      throw new Error(i18n.global.t('runtime.transferNodeInvalid'))
     }
-    if (ids.has(node.id)) throw new Error(`配置包含重复 ID：${node.id}`)
+    if (ids.has(node.id))
+      throw new Error(i18n.global.t('runtime.transferDuplicateId', { id: node.id }))
     ids.add(node.id)
 
     if (node.type === 'group') {
-      if (!Array.isArray(node.children)) throw new Error(`分组“${node.name}”缺少 children 数组`)
+      if (!Array.isArray(node.children))
+        throw new Error(i18n.global.t('runtime.transferChildrenMissing', { name: node.name }))
       if (kind === 'proxy' && typeof node.enabled !== 'boolean') {
-        throw new Error(`代理分组“${node.name}”缺少 enabled 开关`)
+        throw new Error(i18n.global.t('runtime.transferGroupEnabledMissing', { name: node.name }))
       }
       if (node.parentId !== undefined && node.parentId !== parentId) {
-        throw new Error(`分组“${node.name}”的父分组引用不正确`)
+        throw new Error(i18n.global.t('runtime.transferParentInvalid', { name: node.name }))
       }
       node.children.forEach(child => validateNode(child, node.id as string, depth + 1))
       return
     }
 
     if (!parentId || node.groupId !== parentId) {
-      throw new Error(`配置“${node.name}”的所属分组引用不正确`)
+      throw new Error(i18n.global.t('runtime.transferOwnerInvalid', { name: node.name }))
     }
     if (kind === 'proxy') {
       validateHeaderSettings(node.requestHeaders, 'request')
       validateHeaderSettings(node.responseHeaders, 'response')
       if (node.favorite !== undefined && typeof node.favorite !== 'boolean') {
-        throw new Error(`代理“${node.name}”的 favorite 必须为布尔值`)
+        throw new Error(i18n.global.t('runtime.transferFavoriteInvalid', { name: node.name }))
       }
       if (
         node.showSuccessNotification !== undefined &&
         typeof node.showSuccessNotification !== 'boolean'
       ) {
-        throw new Error(`代理“${node.name}”的 showSuccessNotification 必须为布尔值`)
+        throw new Error(i18n.global.t('runtime.transferNotificationInvalid', { name: node.name }))
       }
       if (
         node.type !== 'rule' ||
@@ -75,22 +78,23 @@ function validateConfig(value: unknown, kind: ConfigKind): void {
         typeof node.sourceUrl !== 'string' ||
         typeof node.targetUrl !== 'string'
       ) {
-        throw new Error(`代理“${node.name}”的字段不完整或类型错误`)
+        throw new Error(i18n.global.t('runtime.transferProxyInvalid', { name: node.name }))
       }
     } else if (node.favorite !== undefined && typeof node.favorite !== 'boolean') {
-      throw new Error(`脚本“${node.name}”的 favorite 必须为布尔值`)
+      throw new Error(i18n.global.t('runtime.transferScriptFavoriteInvalid', { name: node.name }))
     } else if (
       node.type !== 'script' ||
       typeof node.content !== 'string' ||
       (node.createdAt !== undefined && typeof node.createdAt !== 'string') ||
       (node.updatedAt !== undefined && typeof node.updatedAt !== 'string')
     ) {
-      throw new Error(`脚本“${node.name}”的字段不完整或类型错误`)
+      throw new Error(i18n.global.t('runtime.transferScriptInvalid', { name: node.name }))
     }
   }
 
   value.groups.forEach(group => {
-    if (!isRecord(group) || group.type !== 'group') throw new Error('顶层节点必须是分组')
+    if (!isRecord(group) || group.type !== 'group')
+      throw new Error(i18n.global.t('runtime.transferTopLevelInvalid'))
     validateNode(group, undefined, 0)
   })
 }
@@ -101,7 +105,7 @@ function validateConfig(value: unknown, kind: ConfigKind): void {
 function detectLegacyKind(config: unknown, filename: string): ConfigKind {
   const kinds = new Set<ConfigKind>()
   const visit = (node: unknown, depth: number) => {
-    if (depth > 100) throw new Error('配置分组嵌套过深')
+    if (depth > 100) throw new Error(i18n.global.t('runtime.transferDepthTooDeep'))
     if (!isRecord(node)) return
     if (node.type === 'rule' || (node.type === 'group' && typeof node.enabled === 'boolean'))
       kinds.add('proxy')
@@ -110,11 +114,11 @@ function detectLegacyKind(config: unknown, filename: string): ConfigKind {
   }
   if (isRecord(config) && Array.isArray(config.groups))
     config.groups.forEach(group => visit(group, 0))
-  if (kinds.size > 1) throw new Error('旧版文件混合了代理和脚本节点')
+  if (kinds.size > 1) throw new Error(i18n.global.t('runtime.transferMixedLegacy'))
   if (kinds.size === 1) return [...kinds][0]!
   if (/^proxy-config-/i.test(filename)) return 'proxy'
   if (/^script-config-/i.test(filename)) return 'script'
-  throw new Error('无法识别旧版空配置类型，请保留 proxy-config- 或 script-config- 文件名前缀')
+  throw new Error(i18n.global.t('runtime.transferEmptyLegacyUnknown'))
 }
 
 /**
@@ -122,12 +126,13 @@ function detectLegacyKind(config: unknown, filename: string): ConfigKind {
  */
 export function parseBackup(text: string, filename = ''): Backup {
   const value: unknown = JSON.parse(text)
-  if (!isRecord(value)) throw new Error('无效的配置文件')
+  if (!isRecord(value)) throw new Error(i18n.global.t('runtime.transferFileInvalid'))
   if (value.version !== undefined && value.version !== '1.0.0')
-    throw new Error('不支持此配置文件版本')
+    throw new Error(i18n.global.t('runtime.transferVersionUnsupported'))
   const data: ConfigData = {}
   if ('config' in value) {
-    if ('proxyConfig' in value || 'scriptConfig' in value) throw new Error('配置文件混用了新旧格式')
+    if ('proxyConfig' in value || 'scriptConfig' in value)
+      throw new Error(i18n.global.t('runtime.transferMixedFormat'))
     const kind = detectLegacyKind(value.config, filename)
     validateConfig(value.config, kind)
     if (kind === 'proxy') data.proxyConfig = structuredClone(value.config) as ProxyConfig
@@ -142,7 +147,8 @@ export function parseBackup(text: string, filename = ''): Backup {
       data.scriptConfig = structuredClone(value.scriptConfig) as ScriptConfig
     }
   }
-  if (!data.proxyConfig && !data.scriptConfig) throw new Error('文件中没有代理或脚本配置')
+  if (!data.proxyConfig && !data.scriptConfig)
+    throw new Error(i18n.global.t('runtime.transferConfigMissing'))
   return {
     version: '1.0.0',
     ...(typeof value.exportTime === 'string' ? { exportTime: value.exportTime } : {}),

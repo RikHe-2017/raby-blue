@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { ref } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import CodeEditor from '../common/CodeEditor.vue'
   import SaveStatus from '../common/SaveStatus.vue'
   import { logError } from '../../utils/logger'
@@ -18,16 +19,17 @@
 
   defineProps<Props>()
   const emit = defineEmits<Emits>()
+  const { t } = useI18n()
 
   const codeEditorRef = ref<InstanceType<typeof CodeEditor>>()
 
   const handleFormat = async () => {
     try {
       await codeEditorRef.value?.format()
-      ElMessage.success('格式化成功')
+      ElMessage.success(t('script.formatSuccess'))
     } catch (error) {
-      logError('格式化失败:', error)
-      ElMessage.error('格式化失败，请检查代码语法')
+      logError(t('script.formatLogFailed'), error)
+      ElMessage.error(t('script.formatFailed'))
     }
   }
 
@@ -41,18 +43,18 @@
     <div class="script-editor__header">
       <div class="script-editor__title-wrapper">
         <div class="script-editor__title-content">
-          <h4>JS 代码编辑器</h4>
+          <h4>{{ t('script.editorTitle') }}</h4>
           <SaveStatus :is-saved="isSaved" />
         </div>
       </div>
       <div class="script-editor__actions">
         <el-button type="primary" size="small" @click="handleFormat">
           <el-icon><i-ep-setting /></el-icon>
-          格式化
+          {{ t('script.format') }}
         </el-button>
         <el-button type="success" size="small" @click="handleExecute">
           <el-icon><i-ep-video-play /></el-icon>
-          执行
+          {{ t('script.execute') }}
         </el-button>
       </div>
     </div>
@@ -71,9 +73,9 @@
       <div class="script-editor__tip">
         <el-icon class="script-editor__tip-icon"><i-ep-info-filled /></el-icon>
         <div class="script-editor__tip-content">
-          <p class="script-editor__tip-title">使用说明</p>
+          <p class="script-editor__tip-title">{{ t('script.instructions') }}</p>
           <p class="script-editor__tip-text">
-            脚本将在当前活动标签页中执行。点击"执行"按钮即可运行代码。支持语法高亮、代码补全和格式化功能。
+            {{ t('script.instructionsText') }}
           </p>
         </div>
       </div>

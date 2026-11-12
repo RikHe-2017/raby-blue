@@ -10,6 +10,7 @@ import type { TreeUIState } from './user-preferences-model'
 import { isProxyRuntimeStatus } from '../proxy/runtime-status'
 import type { ProxyRuntimeStatus } from '../proxy/runtime-status'
 import { logError } from '../utils/logger'
+import { i18n } from '../locales'
 
 const storage = createStorageAdapter()
 
@@ -85,14 +86,18 @@ export const useProxyStore = defineStore('proxy', () => {
       // 添加顶级分组
       config.value.groups.push(group)
     }
-    void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
+    void saveConfig().catch(error =>
+      logError(i18n.global.t('runtime.proxyConfigApplyFailed'), error)
+    )
   }
 
   const updateGroup = (groupId: string, updatedGroup: Partial<ProxyGroup>) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
       Object.assign(group, updatedGroup)
-      void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
+      void saveConfig().catch(error =>
+        logError(i18n.global.t('runtime.proxyConfigApplyFailed'), error)
+      )
     }
   }
 
@@ -116,14 +121,18 @@ export const useProxyStore = defineStore('proxy', () => {
     }
 
     config.value.groups = deleteGroupRecursive(config.value.groups)
-    void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
+    void saveConfig().catch(error =>
+      logError(i18n.global.t('runtime.proxyConfigApplyFailed'), error)
+    )
   }
 
   const addRule = (groupId: string, rule: ProxyRule) => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
       group.children.push(rule)
-      void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
+      void saveConfig().catch(error =>
+        logError(i18n.global.t('runtime.proxyConfigApplyFailed'), error)
+      )
     }
   }
 
@@ -160,7 +169,9 @@ export const useProxyStore = defineStore('proxy', () => {
     const group = findGroupById(config.value.groups, groupId)
     if (group) {
       group.children = group.children.filter(node => !(isProxyRule(node) && node.id === ruleId))
-      void saveConfig().catch(error => logError('代理配置保存或应用失败:', error))
+      void saveConfig().catch(error =>
+        logError(i18n.global.t('runtime.proxyConfigApplyFailed'), error)
+      )
     }
   }
 
@@ -177,7 +188,8 @@ export const useProxyStore = defineStore('proxy', () => {
         })) as { success?: boolean; error?: string; runtimeStatus?: unknown } | undefined
         if (isProxyRuntimeStatus(result?.runtimeStatus))
           runtimeStatus.value = { ...result.runtimeStatus }
-        if (!result?.success) throw new Error(result?.error ?? '保存代理配置失败')
+        if (!result?.success)
+          throw new Error(result?.error ?? i18n.global.t('runtime.proxyConfigSaveFailed'))
       })
     saveQueue = operation
     await operation

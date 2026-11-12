@@ -9,7 +9,11 @@ export interface PageNotificationScope {
 }
 
 // Serialized by executeScript; all runtime dependencies must remain inside this function.
-export async function installPageNotification(iconDataUrl: string) {
+export async function installPageNotification(
+  iconDataUrl: string,
+  headingText: string,
+  closeText: string
+) {
   const scope = globalThis as typeof globalThis & PageNotificationScope
   if (scope.rabyBlueNotification) return true
   if (document.visibilityState !== 'visible') return false
@@ -63,7 +67,7 @@ export async function installPageNotification(iconDataUrl: string) {
     const title = document.createElement('div')
     title.className = 'title'
     const heading = document.createElement('span')
-    heading.textContent = '欢迎使用蓝兔'
+    heading.textContent = headingText
     const icon = document.createElement('canvas')
     icon.className = 'icon'
     icon.width = bitmap.width
@@ -80,8 +84,8 @@ export async function installPageNotification(iconDataUrl: string) {
     const close = document.createElement('button')
     close.className = 'close'
     close.type = 'button'
-    close.setAttribute('aria-label', '关闭提示')
-    close.title = '关闭提示'
+    close.setAttribute('aria-label', closeText)
+    close.title = closeText
     const closeIcon = document.createElement('span')
     closeIcon.setAttribute('aria-hidden', 'true')
     closeIcon.textContent = '×'

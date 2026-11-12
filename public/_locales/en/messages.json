@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "RabyBlue"
+  },
+  "extensionShortName": {
+    "message": "RabyBlue"
+  },
+  "extensionDescription": {
+    "message": "RabyBlue is a browser extension for web development and debugging. It can redirect requests, modify request and response headers, and manage and run JavaScript debugging scripts."
+  }
+}

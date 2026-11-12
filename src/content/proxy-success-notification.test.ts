@@ -88,11 +88,14 @@ async function pageFixture(installListener = true) {
   // Execute the actual serialized content script in a separate page realm, without a browser.
   const install = async () => {
     await runInContext(
-      `(${installPageNotification.toString()})('data:image/png;base64,AA==')`,
+      `(${installPageNotification.toString()})('data:image/png;base64,AA==', '欢迎使用蓝兔', '关闭提示')`,
       context
     )
     if (installListener)
-      return runInContext(`(${installProxySuccessNotification.toString()})()`, context)
+      return runInContext(
+        `(${installProxySuccessNotification.toString()})('代理配置已生效，RabyBlue时刻为您服务～')`,
+        context
+      )
   }
   await install()
   const send = (ids: string[], senderId = 'raby-blue') => {
@@ -145,8 +148,18 @@ test('injection installs the shared singleton before its message listener in the
   const target = { tabId: 10, documentIds: ['doc1'] }
   expect(await injectProxySuccessNotification(target, 'icon')).toBe(true)
   expect(executeScript.mock.calls.map(([options]) => options)).toEqual([
-    { target, func: installPageNotification, args: ['icon'], injectImmediately: true },
-    { target, func: installProxySuccessNotification, injectImmediately: true }
+    {
+      target,
+      func: installPageNotification,
+      args: ['icon', '欢迎使用蓝兔', '关闭提示'],
+      injectImmediately: true
+    },
+    {
+      target,
+      func: installProxySuccessNotification,
+      args: ['代理配置已生效，RabyBlue时刻为您服务～'],
+      injectImmediately: true
+    }
   ])
   executeScript.mockClear()
   executeScript.mockResolvedValueOnce([{ result: false }])

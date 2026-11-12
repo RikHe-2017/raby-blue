@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { computed, ref } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import { ElMessage } from 'element-plus'
   import ScriptTree from './ScriptTree.vue'
   import ScriptFavoritesPanel from './ScriptFavoritesPanel.vue'
@@ -18,6 +19,7 @@
     (event: 'edit-script', node: ScriptNode): void
   }>()
   const preferences = useUserPreferencesStore()
+  const { t } = useI18n()
   const sidebar = computed(() => preferences.preferences.scriptSidebar)
   const treeState = computed(() => preferences.preferences.scriptUIState)
   const entries = computed(() => collectScriptEntries(props.groups))
@@ -31,7 +33,7 @@
     try {
       await handleAddGroup()
     } catch {
-      ElMessage.error('分类保存失败，请重试')
+      ElMessage.error(t('script.saveCategoryFailed'))
     }
   }
 </script>
@@ -39,22 +41,24 @@
 <template>
   <div class="script-sidebar">
     <div class="script-sidebar__header">
-      <span class="script-sidebar__header-title">脚本分组</span>
+      <span class="script-sidebar__header-title">{{ t('script.groupTitle') }}</span>
       <el-dropdown trigger="click" @command="createRootGroup">
         <el-button
           class="script-sidebar__add"
           text
           circle
           size="small"
-          title="创建分类"
-          aria-label="创建脚本分类"
+          :title="t('script.createCategory')"
+          :aria-label="t('script.createCategory')"
           :disabled="busy || !preferences.ready"
         >
           <el-icon><i-ep-plus /></el-icon>
         </el-button>
         <template #dropdown
           ><el-dropdown-menu
-            ><el-dropdown-item command="category">创建分类</el-dropdown-item></el-dropdown-menu
+            ><el-dropdown-item command="category">{{
+              t('script.createCategory')
+            }}</el-dropdown-item></el-dropdown-menu
           ></template
         >
       </el-dropdown>
@@ -68,15 +72,15 @@
       >
         <el-collapse-item name="favorites" :disabled="!preferences.ready">
           <template #title>
-            <span class="script-sidebar__panel-title">收藏</span>
+            <span class="script-sidebar__panel-title">{{ t('script.favorites') }}</span>
             <span class="script-sidebar__count">{{ favorites.length }}</span>
             <span class="script-sidebar__mode" @click.stop @keydown.stop>
               <el-switch
                 :model-value="sidebar.favoritesGrouped"
-                aria-label="收藏脚本分类模式"
+                :aria-label="`${t('script.favorites')}${t('proxy.categoryMode')}`"
                 :disabled="!preferences.ready"
-                active-text="分类"
-                inactive-text="简略"
+                :active-text="t('proxy.categoryMode')"
+                :inactive-text="t('proxy.simpleMode')"
                 size="small"
                 @update:model-value="
                   value =>
@@ -102,14 +106,14 @@
         </el-collapse-item>
         <el-collapse-item name="config" :disabled="!preferences.ready">
           <template #title>
-            <span class="script-sidebar__panel-title">脚本配置</span>
+            <span class="script-sidebar__panel-title">{{ t('script.configTitle') }}</span>
             <span class="script-sidebar__count">{{ entries.length }}</span>
           </template>
           <div class="script-sidebar__search">
             <el-input
               v-model="filterText"
-              placeholder="搜索分类或脚本..."
-              aria-label="搜索全部脚本"
+              :placeholder="t('script.searchPlaceholder')"
+              :aria-label="t('script.searchAllLabel')"
               clearable
             >
               <template #prefix

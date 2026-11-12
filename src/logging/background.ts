@@ -3,6 +3,7 @@ import { createLogManager } from './manager'
 import { LOG_LEVELS, normalizeLoggingPreferences } from './model'
 import type { LogEntry, LogFilter, LogPageFilter } from './model'
 import { setLogSink } from '../utils/logger'
+import { i18n } from '../locales'
 
 const ALARM_NAME = 'raby-blue-log-retention'
 
@@ -12,7 +13,7 @@ export function startLogging() {
     return normalizeLoggingPreferences(saved.userPreferences?.logging)
   })
   const failed = () => {
-    console.log('[logging]:', '日志存储暂不可用')
+    console.log('[logging]:', i18n.global.t('runtime.loggingUnavailable'))
   }
   setLogSink(entry =>
     manager.record(entry).catch(error => {
@@ -50,7 +51,7 @@ export function startLogging() {
             (filter.start !== undefined && !Number.isFinite(filter.start)) ||
             (filter.end !== undefined && !Number.isFinite(filter.end))
           )
-            throw new Error('无效的日志分页条件')
+            throw new Error(i18n.global.t('runtime.invalidLogPage'))
           return manager.page(filter)
         }
         case 'record': {
@@ -62,7 +63,7 @@ export function startLogging() {
             typeof entry.source !== 'string' ||
             !Array.isArray(entry.details)
           )
-            throw new Error('无效的日志')
+            throw new Error(i18n.global.t('runtime.invalidLog'))
           await manager.record(entry)
           return
         }
@@ -75,7 +76,7 @@ export function startLogging() {
               (!Array.isArray(filter.levels) ||
                 !filter.levels.every(level => LOG_LEVELS.includes(level))))
           )
-            throw new Error('无效的日志筛选条件')
+            throw new Error(i18n.global.t('runtime.invalidLogFilter'))
           return manager.export(filter)
         }
         case 'clear':
@@ -84,14 +85,14 @@ export function startLogging() {
           await manager.cleanup()
           return
         default:
-          throw new Error('不支持的日志操作')
+          throw new Error(i18n.global.t('runtime.unsupportedLogOperation'))
       }
     }
     void run()
       .then(data => respond({ success: true, data }))
       .catch(() => {
         failed()
-        respond({ success: false, error: '日志操作失败，请检查扩展后台或存储空间后重试' })
+        respond({ success: false, error: i18n.global.t('runtime.logOperationFailed') })
       })
     return true
   })

@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import type { HeaderSetting, ProxyRule } from '../../types/proxy'
 import { validateHeaderSettings } from '../../proxy/header-settings.ts'
+import { i18n } from '../../locales'
 
 export type HeaderField = 'requestHeaders' | 'responseHeaders'
 interface HeaderDraft {
@@ -76,7 +77,7 @@ export function createHeaderDrafts(
           state.base = signature(readRule(id)?.[field])
           if (state.revision === revision) {
             state.saved = false
-            state.error = `保存失败：${String(error)}`
+            state.error = i18n.global.t('runtime.saveFailed', { message: String(error) })
           }
           throw error
         }

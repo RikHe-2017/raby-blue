@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { computed } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import NameEditor from './NameEditor.vue'
   import SaveStatus from '../common/SaveStatus.vue'
   import HeaderSettings from './HeaderSettings.vue'
@@ -35,6 +36,7 @@
 
   const props = defineProps<Props>()
   const emit = defineEmits<Emits>()
+  const { t } = useI18n()
   const sourceIsRegex = computed(() => isRegexSource(props.sourceUrl.trim()))
 </script>
 
@@ -43,18 +45,20 @@
     <section
       v-if="!isActiveGroup && activeRule"
       class="config-section__proxy"
-      aria-label="代理成功提示"
+      :aria-label="t('proxy.successNotification')"
     >
       <div class="config-section__proxy-header">
-        <h4 class="config-section__proxy-title">代理成功提示</h4>
+        <h4 class="config-section__proxy-title">{{ t('proxy.successNotification') }}</h4>
         <SaveStatus :is-saved="!isSuccessNotificationSaving" />
       </div>
       <div class="config-section__notification-row">
-        <span class="config-section__notification-label">在被代理的页面上展示代理成功提示</span>
+        <span class="config-section__notification-label">{{
+          t('proxy.successNotificationDescription')
+        }}</span>
         <el-switch
           :model-value="activeRule.showSuccessNotification === true"
           :loading="isSuccessNotificationSaving"
-          aria-label="在被代理的页面上展示代理成功提示"
+          :aria-label="t('proxy.successNotificationDescription')"
           @update:model-value="value => emit('update:showSuccessNotification', value === true)"
         />
       </div>
@@ -70,14 +74,14 @@
     <!-- 代理配置区域 -->
     <div v-if="!isActiveGroup && activeRule" class="config-section__proxy">
       <div class="config-section__proxy-header">
-        <h4 class="config-section__proxy-title">代理配置</h4>
+        <h4 class="config-section__proxy-title">{{ t('proxy.config') }}</h4>
         <SaveStatus :is-saved="isConfigSaved" />
       </div>
       <div class="config-section__fields">
         <div class="config-section__field">
           <div class="config-section__field-label">
-            <label for="proxy-source-url">源地址（匹配规则）</label>
-            <el-tag v-if="sourceIsRegex" size="small" effect="plain">正则</el-tag>
+            <label for="proxy-source-url">{{ t('proxy.sourceUrl') }}</label>
+            <el-tag v-if="sourceIsRegex" size="small" effect="plain">{{ t('proxy.regex') }}</el-tag>
           </div>
           <el-input
             id="proxy-source-url"
@@ -85,13 +89,13 @@
             type="textarea"
             :autosize="{ minRows: 2, maxRows: 4 }"
             resize="none"
-            :placeholder="'普通地址：https://example.com/app/\n正则表达式：^https://example\\.com/app/(.*)$'"
+            :placeholder="t('proxy.sourceUrlPlaceholder')"
             spellcheck="false"
             @update:model-value="val => emit('update:sourceUrl', val)"
           />
         </div>
         <div class="config-section__field">
-          <label for="proxy-target-url">目标地址（选填）</label>
+          <label for="proxy-target-url">{{ t('proxy.targetUrl') }}</label>
           <el-input
             id="proxy-target-url"
             :model-value="targetUrl"
@@ -107,7 +111,7 @@
     </div>
     <template v-if="!isActiveGroup && activeRule">
       <HeaderSettings
-        title="请求头设置"
+        :title="t('header.requestTitle')"
         direction="request"
         :model-value="requestHeaders"
         :is-saved="isRequestHeadersSaved"
@@ -115,7 +119,7 @@
         @update:model-value="value => emit('update:requestHeaders', value)"
       />
       <HeaderSettings
-        title="响应头设置"
+        :title="t('header.responseTitle')"
         direction="response"
         :model-value="responseHeaders"
         :is-saved="isResponseHeadersSaved"
@@ -127,7 +131,7 @@
   <div v-else class="config-section config-section--empty">
     <div class="config-section__empty-content">
       <el-icon class="config-section__empty-icon"><i-ep-document /></el-icon>
-      <p class="config-section__empty-text">请选择一个分组或代理来配置</p>
+      <p class="config-section__empty-text">{{ t('proxy.selectForConfig') }}</p>
     </div>
   </div>
 </template>

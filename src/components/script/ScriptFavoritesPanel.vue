@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed, ref } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import ScriptTree from './ScriptTree.vue'
   import ScriptList from './ScriptList.vue'
   import { filterScriptEntries, filterScriptGroups } from './sidebar-projections'
@@ -21,6 +22,7 @@
     (event: 'update:expandedKeys', keys: string[]): void
   }>()
   const searchText = ref('')
+  const { t } = useI18n()
   const visibleEntries = computed(() => filterScriptEntries(props.entries, searchText.value))
   const treeGroups = computed(() =>
     filterScriptGroups(
@@ -34,8 +36,8 @@
   <div class="script-favorites__search">
     <el-input
       v-model="searchText"
-      placeholder="搜索分类或脚本..."
-      aria-label="搜索收藏脚本"
+      :placeholder="t('script.searchPlaceholder')"
+      :aria-label="t('script.searchFavoritesLabel')"
       clearable
     >
       <template #prefix
@@ -45,7 +47,7 @@
   </div>
   <Empty
     v-if="!visibleEntries.length"
-    :description="searchText.trim() ? '未找到匹配的脚本' : '暂无收藏的脚本'"
+    :description="searchText.trim() ? t('script.noMatch') : t('script.favoritesEmpty')"
     :image-size="40"
   />
   <ScriptTree

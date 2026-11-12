@@ -1,5 +1,6 @@
 import type { FlowLogger } from './logging/flow-logger'
 import { logError } from './utils/logger'
+import { i18n } from './locales'
 
 export async function injectScript(
   tabId: number,
@@ -24,7 +25,7 @@ export async function injectScript(
   })
   return results.map(result => {
     const outcome = result.result
-    if (!outcome) throw new Error('未收到脚本执行结果')
+    if (!outcome) throw new Error(i18n.global.t('runtime.scriptResultMissing'))
     if (!outcome.success) throw new Error(outcome.error)
     return { ...result, result: outcome.value }
   })
@@ -55,8 +56,8 @@ export async function executeScriptRequest(
       tabId
     })
     if (tabId === undefined) {
-      logs.failed(key, '未找到活动标签页')
-      return { success: false, error: '未找到活动标签页' }
+      logs.failed(key, i18n.global.t('runtime.activeTabMissing'))
+      return { success: false, error: i18n.global.t('runtime.activeTabMissing') }
     }
     try {
       const results = await dependencies.inject(tabId, code)

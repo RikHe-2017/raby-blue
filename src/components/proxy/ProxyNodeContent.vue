@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import type { ProxyNode } from '../../types/proxy'
   import { getProxyFavoriteSummary } from '../../stores/proxy-rules'
   import FavoriteButton from './FavoriteButton.vue'
@@ -20,6 +21,7 @@
   }>()
   const favoriteSummary = computed(() => getProxyFavoriteSummary(props.data))
   const isActive = computed(() => props.data.id === props.activeItemId)
+  const { t } = useI18n()
 </script>
 
 <template>
@@ -36,7 +38,7 @@
         class="proxy-node__checkbox"
         v-if="data.type === 'rule'"
         :model-value="data.enabled"
-        :aria-label="`启用 ${data.name}`"
+        :aria-label="t('proxy.enable', { name: data.name })"
         @change="value => emit('set-enabled', data.id, value === true)"
         @click.stop
       />
@@ -69,8 +71,8 @@
       <el-dropdown trigger="click" @command="command => emit('command', command, data)">
         <el-button
           class="proxy-node__more"
-          :aria-label="`${data.name}的操作`"
-          title="更多操作"
+          :aria-label="t('common.nameSuffix', { name: data.name })"
+          :title="t('common.moreActions')"
           text
           circle
           size="small"
@@ -81,12 +83,14 @@
         <template #dropdown>
           <el-dropdown-menu>
             <template v-if="data.type === 'group'">
-              <el-dropdown-item command="category"> 创建分类 </el-dropdown-item>
-              <el-dropdown-item command="proxy"> 创建代理 </el-dropdown-item>
+              <el-dropdown-item command="category">
+                {{ t('proxy.createCategory') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="proxy"> {{ t('proxy.createProxy') }} </el-dropdown-item>
             </template>
             <template v-else-if="data.type === 'rule'">
-              <el-dropdown-item command="duplicate"> 复制代理 </el-dropdown-item>
-              <el-dropdown-item command="edit"> 编辑代理 </el-dropdown-item>
+              <el-dropdown-item command="duplicate"> {{ t('proxy.copyProxy') }} </el-dropdown-item>
+              <el-dropdown-item command="edit"> {{ t('proxy.editProxy') }} </el-dropdown-item>
             </template>
             <el-dropdown-item
               command="favorite"
@@ -95,12 +99,12 @@
               {{
                 favoriteSummary.ruleCount > 0 &&
                 favoriteSummary.favoriteCount === favoriteSummary.ruleCount
-                  ? '取消收藏'
-                  : '加入收藏'
+                  ? t('proxy.removeFavorite')
+                  : t('proxy.addFavorite')
               }}
             </el-dropdown-item>
             <el-dropdown-item command="delete" divided class="proxy-node__menu-delete">
-              {{ data.type === 'group' ? '删除分组' : '删除代理' }}
+              {{ data.type === 'group' ? t('proxy.deleteGroup') : t('proxy.deleteProxy') }}
             </el-dropdown-item>
           </el-dropdown-menu>
         </template>

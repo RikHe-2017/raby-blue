@@ -1,6 +1,7 @@
 <script lang="ts" setup>
   import { onMounted, onUnmounted, reactive, ref, watch, computed } from 'vue'
   import { ElMessage } from 'element-plus'
+  import { useI18n } from 'vue-i18n'
   import Sidebar from './Sidebar.vue'
   import ContentHeader from './ContentHeader.vue'
   import ConfigSection from './ConfigSection.vue'
@@ -10,6 +11,7 @@
   import { createHeaderDrafts } from './header-drafts'
 
   const proxyStore = useProxyStore()
+  const { t } = useI18n()
   const configLoaded = ref(false)
   const proxyEnabled = ref(false)
   // 内容区域的状态（不需要持久化）
@@ -226,7 +228,11 @@
     try {
       await proxyStore.toggleGlobalProxy()
     } catch (error) {
-      ElMessage.error(`代理总控保存失败：${error instanceof Error ? error.message : String(error)}`)
+      ElMessage.error(
+        t('proxy.savingControllerFailed', {
+          message: error instanceof Error ? error.message : String(error)
+        })
+      )
     }
   }
 
@@ -239,7 +245,7 @@
     try {
       await operation
     } catch {
-      ElMessage.error('代理成功提示设置保存失败，请重试')
+      ElMessage.error(t('proxy.savingNotificationFailed'))
     } finally {
       successNotificationSaves.delete(rule.id)
     }
@@ -308,7 +314,7 @@
     nameSaveTimer = setTimeout(() => {
       nameSaveTimer = null
       void handleSaveItemName().catch(error =>
-        ElMessage.error(`代理名称保存或应用失败：${String(error)}`)
+        ElMessage.error(t('proxy.savingNameFailed', { message: String(error) }))
       )
     }, 500)
   })
@@ -333,7 +339,7 @@
           if (activeGroupId.value === groupId && activeRule.value?.id === ruleId)
             isConfigSaved.value = true
         })
-        .catch(error => ElMessage.error(`代理配置保存或应用失败：${String(error)}`))
+        .catch(error => ElMessage.error(t('proxy.savingConfigFailed', { message: String(error) })))
     }
 
     if (configSaveTimer) clearTimeout(configSaveTimer)

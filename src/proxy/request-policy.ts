@@ -2,6 +2,7 @@ import { buildSourcePattern } from '../document-response-rules.ts'
 import { REQUEST_TYPES } from './ProxyStrategy.ts'
 import type { RequestPolicy, RequestType, StrategyConfig } from './ProxyStrategy'
 import type { ProxyRule } from '../types/proxy'
+import { i18n } from '../locales'
 
 export const DEFAULT_REQUEST_POLICY: RequestPolicy = Object.freeze({
   document: 'response',
@@ -41,7 +42,7 @@ export function getRequestType(debuggerType: string): RequestType {
 
 export function splitStrategyConfig(rules: ProxyRule[], policy: RequestPolicy) {
   if (REQUEST_TYPES.some(type => policy[type] !== 'redirect' && policy[type] !== 'response'))
-    throw new Error('每个请求类型必须指定一种代理策略')
+    throw new Error(i18n.global.t('runtime.policyRequired'))
   getResponsePatterns(REQUEST_TYPES.filter(type => policy[type] === 'response'))
   return {
     redirect: {
@@ -60,7 +61,7 @@ export function getResponsePatterns(types: RequestType[]) {
     Object.values(DEBUGGER_TYPES).filter(type => type !== 'websocket')
   )
   if (types.some(type => !supported.has(type)))
-    throw new Error('所选请求类型不支持按类型响应替换，请使用重定向策略')
+    throw new Error(i18n.global.t('runtime.responseReplacementUnsupported'))
   return Object.entries(DEBUGGER_TYPES)
     .filter(([, type]) => types.includes(type))
     .flatMap(([resourceType]) =>

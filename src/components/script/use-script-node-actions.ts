@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import { useScriptStore } from '../../stores/script'
 import { findScriptNode, getScriptFavoriteSummary } from '../../stores/script-tree'
 import type { ScriptGroup, ScriptNode } from '../../types/script'
+import { i18n } from '../../locales'
 
 export function useScriptNodeActions(
   emit: (event: 'edit-script', node: ScriptNode) => void,
@@ -14,7 +15,7 @@ export function useScriptNodeActions(
   const handleAddGroup = async (parentId?: string) => {
     const group: ScriptGroup = {
       id: crypto.randomUUID(),
-      name: '新分类',
+      name: i18n.global.t('script.newGroup'),
       type: 'group',
       children: []
     }
@@ -37,33 +38,41 @@ export function useScriptNodeActions(
         if (!summary.scriptCount) return
         const favorite = summary.favoriteCount !== summary.scriptCount
         if (await store.setFavorite(node.id, favorite)) {
-          ElMessage.success(favorite ? '加入收藏成功' : '取消收藏成功')
+          ElMessage.success(
+            favorite
+              ? i18n.global.t('script.favoriteSaved')
+              : i18n.global.t('script.favoriteRemoved')
+          )
         }
       } else if (node.type === 'group') {
         if (command === 'category') await handleAddGroup(node.id)
         else if (command === 'script')
           await store.addScript(node.id, {
             id: crypto.randomUUID(),
-            name: '新脚本',
-            content: '// 请输入你的JS代码',
+            name: i18n.global.t('script.newScript'),
+            content: i18n.global.t('script.defaultContent'),
             groupId: node.id,
             type: 'script',
             favorite: false
           })
         else if (command === 'delete' && (await store.deleteGroup(node.id)))
-          ElMessage.success('分组已删除')
+          ElMessage.success(i18n.global.t('script.groupDeleted'))
       } else if (command === 'duplicate') {
         await store.addScript(node.groupId, {
           ...node,
           id: crypto.randomUUID(),
-          name: `${node.name} - 副本`,
+          name: i18n.global.t('common.duplicateSuffix', { name: node.name }),
           favorite: false
         })
       } else if (command === 'delete' && (await store.deleteScript(node.groupId, node.id))) {
-        ElMessage.success('脚本已删除')
+        ElMessage.success(i18n.global.t('script.scriptDeleted'))
       }
     } catch {
-      ElMessage.error(command === 'favorite' ? '收藏保存失败，请重试' : '操作保存失败，请重试')
+      ElMessage.error(
+        command === 'favorite'
+          ? i18n.global.t('script.favoriteSaveFailed')
+          : i18n.global.t('errors.operationFailed')
+      )
     } finally {
       busy.value = false
     }

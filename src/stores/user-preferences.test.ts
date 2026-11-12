@@ -37,6 +37,7 @@ test('脚本全收起及收藏树展开状态独立往返，更新代理偏好�
 test('统一偏好默认值完整且不读取旧的独立偏好结构', () => {
   const defaults = normalizeUserPreferences(undefined)
   expect(defaults.activeTab).toBe('proxy')
+  expect(defaults.locale).toBe('zh-CN')
   expect(defaults.proxySidebar).toStrictEqual({
     selectedGrouped: false,
     favoritesGrouped: false,
@@ -53,6 +54,13 @@ test('统一偏好默认值完整且不读取旧的独立偏好结构', () => {
     defaults
   )
 })
+
+test('语言偏好默认中文并只接受已注册的语言', () => {
+  expect(normalizeUserPreferences(undefined).locale).toBe('zh-CN')
+  expect(normalizeUserPreferences({ locale: 'en-US' }).locale).toBe('en-US')
+  expect(normalizeUserPreferences({ locale: 'ja-JP' }).locale).toBe('zh-CN')
+})
+
 test('分区更新保留其他偏好，输入不变且返回普通独立数组', () => {
   const initial = normalizeUserPreferences(undefined)
   const before = structuredClone(initial)

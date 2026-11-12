@@ -12,6 +12,7 @@ import { startLogging } from './logging/background'
 import { createProxyLogObserver } from './logging/proxy'
 import { createFlowLogger } from './logging/flow-logger'
 import { executeScriptRequest, injectScript } from './script-execution'
+import { i18n } from './locales'
 
 startLogging()
 
@@ -70,14 +71,14 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       typeof request.config.enabled !== 'boolean' ||
       !Array.isArray(request.config.groups)
     ) {
-      sendResponse({ success: false, error: '无效的代理配置' })
+      sendResponse({ success: false, error: i18n.global.t('runtime.invalidProxyConfig') })
       return false
     }
     void proxyApplication
       .save(request.config as ProxyConfig, request.updateEnabled === true)
       .then(runtimeStatus => sendResponse({ success: true, runtimeStatus }))
       .catch(error => {
-        logError('保存代理配置失败:', error)
+        logError(i18n.global.t('runtime.saveProxyConfigFailed'), error)
         sendResponse({
           success: false,
           error: error instanceof Error ? error.message : String(error),

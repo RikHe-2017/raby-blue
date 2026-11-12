@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed, onMounted, ref } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import { ElMessage, ElMessageBox } from 'element-plus'
   import { useUserPreferencesStore } from '../../stores/user-preferences'
   import { LOG_LEVELS, localDateFilter } from '../../logging/model'
@@ -8,6 +9,7 @@
   import LogViewerDialog from './LogViewerDialog.vue'
 
   const emit = defineEmits<{ (event: 'busy-change', value: boolean): void }>()
+  const { t } = useI18n()
   const preferences = useUserPreferencesStore()
   const settings = computed(() => preferences.preferences.logging)
   const busy = ref(false)
@@ -15,13 +17,13 @@
   const levels = ref<LogLevel[]>([...LOG_LEVELS])
   const error = ref('')
   const viewerVisible = ref(false)
-  const retentionOptions = [
-    { value: 1, label: '1 天' },
-    { value: 7, label: '7 天' },
-    { value: 30, label: '1 个月（30 天）' },
-    { value: 90, label: '3 个月（90 天）' },
-    { value: 365, label: '1 年（365 天）' }
-  ]
+  const retentionOptions = computed(() => [
+    { value: 1, label: t('logging.retentionDays', { count: 1 }) },
+    { value: 7, label: t('logging.retentionDays', { count: 7 }) },
+    { value: 30, label: t('logging.retentionMonths', { count: 1, days: 30 }) },
+    { value: 90, label: t('logging.retentionMonths', { count: 3, days: 90 }) },
+    { value: 365, label: t('logging.retentionYear') }
+  ])
 
   const run = async (operation: () => Promise<void>) => {
     if (busy.value) return
@@ -32,7 +34,7 @@
       await operation()
     } catch (reason) {
       if (reason !== 'cancel' && reason !== 'close') {
-        error.value = reason instanceof Error ? reason.message : '日志操作失败'
+        error.value = reason instanceof Error ? reason.message : t('logging.operationFailed')
         ElMessage.error(error.value)
       }
     } finally {
@@ -47,9 +49,9 @@
       try {
         await requestLogs('cleanup')
       } catch {
-        throw new Error('日志设置已保存，但过期日志清理失败，请重试')
+        throw new Error(t('logging.savedCleanupFailed'))
       }
-      ElMessage.success('日志设置已保存')
+      ElMessage.success(t('logging.settingsSaved'))
     })
 
   const exportLogs = () =>
@@ -57,7 +59,7 @@
       const filter = { ...localDateFilter(dates.value), levels: [...levels.value] }
       const entries = await requestLogs<LogEntry[]>('export', filter)
       if (!entries.length) {
-        ElMessage.info('没有符合条件的日志')
+        ElMessage.info(t('logging.noResults'))
         return
       }
       const now = new Date().toISOString()
@@ -74,7 +76,7 @@
       } finally {
         setTimeout(() => URL.revokeObjectURL(url), 1000)
       }
-      ElMessage.success(`已导出 ${entries.length} 条日志`)
+      ElMessage.success(t('logging.exported', { count: entries.length }))
     })
 
   const saveRetention = (value: number) => save({ retentionDays: value })
@@ -84,13 +86,13 @@
 
   const clearLogs = () =>
     run(async () => {
-      await ElMessageBox.confirm(
-        '将永久删除全部已保存日志，日志设置不受影响。是否继续？',
-        '清空日志',
-        { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' }
-      )
+      await ElMessageBox.confirm(t('logging.clearConfirm'), t('logging.clearTitle'), {
+        type: 'warning',
+        confirmButtonText: t('logging.clear'),
+        cancelButtonText: t('common.cancel')
+      })
       await requestLogs('clear')
-      ElMessage.success('日志已清空')
+      ElMessage.success(t('logging.cleared'))
     })
 
   onMounted(() =>
@@ -102,20 +104,23 @@
 
 <template>
   <div class="logging-settings" v-loading="busy">
-    <section class="logging-settings__section logging-settings__clear" aria-label="日志查看">
-      <h3 class="logging-settings__heading">日志查看</h3>
+    <section
+      class="logging-settings__section logging-settings__clear"
+      :aria-label="t('logging.viewSection')"
+    >
+      <h3 class="logging-settings__heading">{{ t('logging.viewSection') }}</h3>
       <el-button :disabled="busy" @click="viewerVisible = true"
-        ><el-icon><i-ep-view /></el-icon>查看日志</el-button
+        ><el-icon><i-ep-view /></el-icon>{{ t('logging.view') }}</el-button
       >
     </section>
-    <section class="logging-settings__section" aria-label="日志保存设置">
-      <h3 class="logging-settings__heading">保存设置</h3>
+    <section class="logging-settings__section" :aria-label="t('logging.saveSettings')">
+      <h3 class="logging-settings__heading">{{ t('logging.saveSettings') }}</h3>
       <div class="logging-settings__row">
-        <span class="logging-settings__label">保存等级</span>
+        <span class="logging-settings__label">{{ t('logging.saveLevel') }}</span>
         <el-checkbox-group
           :model-value="settings.levels"
           :disabled="busy"
-          aria-label="保存等级"
+          :aria-label="t('logging.saveLevel')"
           @update:model-value="saveLevels"
         >
           <el-checkbox v-for="level in LOG_LEVELS" :key="level" :value="level">{{
@@ -124,7 +129,9 @@
         </el-checkbox-group>
       </div>
       <div class="logging-settings__row">
-        <label class="logging-settings__label" for="log-retention">保存期限</label>
+        <label class="logging-settings__label" for="log-retention">{{
+          t('logging.retention')
+        }}</label>
         <el-select
           id="log-retention"
           class="logging-settings__retention"
@@ -141,24 +148,24 @@
         </el-select>
       </div>
     </section>
-    <section class="logging-settings__section" aria-label="日志导出">
-      <h3 class="logging-settings__heading">导出日志</h3>
+    <section class="logging-settings__section" :aria-label="t('logging.exportSection')">
+      <h3 class="logging-settings__heading">{{ t('logging.exportSection') }}</h3>
       <div class="logging-settings__row">
-        <span class="logging-settings__label">日期范围</span>
+        <span class="logging-settings__label">{{ t('logging.dateRange') }}</span>
         <el-date-picker
           v-model="dates"
           class="logging-settings__dates"
           type="daterange"
           value-format="YYYY-MM-DD"
-          start-placeholder="全部日期"
-          end-placeholder="全部日期"
+          :start-placeholder="t('logging.allDates')"
+          :end-placeholder="t('logging.allDates')"
           :disabled="busy"
           :teleported="false"
         />
       </div>
       <div class="logging-settings__row">
-        <span class="logging-settings__label">导出等级</span>
-        <el-checkbox-group v-model="levels" :disabled="busy" aria-label="导出等级">
+        <span class="logging-settings__label">{{ t('logging.exportLevel') }}</span>
+        <el-checkbox-group v-model="levels" :disabled="busy" :aria-label="t('logging.exportLevel')">
           <el-checkbox v-for="level in LOG_LEVELS" :key="level" :value="level">{{
             level
           }}</el-checkbox>
@@ -166,14 +173,17 @@
       </div>
       <div class="logging-settings__commands">
         <el-button type="primary" :disabled="busy || !levels.length" @click="exportLogs"
-          ><el-icon><i-ep-download /></el-icon>导出日志</el-button
+          ><el-icon><i-ep-download /></el-icon>{{ t('logging.export') }}</el-button
         >
       </div>
     </section>
-    <section class="logging-settings__section logging-settings__clear" aria-label="日志清理">
-      <h3 class="logging-settings__heading">日志清理</h3>
+    <section
+      class="logging-settings__section logging-settings__clear"
+      :aria-label="t('logging.cleanup')"
+    >
+      <h3 class="logging-settings__heading">{{ t('logging.cleanup') }}</h3>
       <el-button type="danger" plain :disabled="busy" @click="clearLogs"
-        ><el-icon><i-ep-delete /></el-icon>清空全部日志</el-button
+        ><el-icon><i-ep-delete /></el-icon>{{ t('logging.clearAll') }}</el-button
       >
     </section>
     <p v-if="error" class="logging-settings__error" role="alert">{{ error }}</p>

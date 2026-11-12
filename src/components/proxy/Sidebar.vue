@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { computed, ref } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import { ElMessage } from 'element-plus'
   import ProxyTree from './ProxyTree.vue'
   import ProxyQuickPanel from './ProxyQuickPanel.vue'
@@ -22,6 +23,7 @@
 
   const props = defineProps<Props>()
   const emit = defineEmits<Emits>()
+  const { t } = useI18n()
 
   const proxyStore = useProxyStore()
   const filterText = ref('')
@@ -35,17 +37,17 @@
   const quickPanels = computed(() => [
     {
       id: 'selected',
-      title: '已选择',
+      title: t('proxy.selected'),
       entries: selectedEntries.value,
       grouped: sidebarPreferences.value.selectedGrouped,
-      emptyText: '暂无已选择的代理'
+      emptyText: t('proxy.selectedEmpty')
     },
     {
       id: 'favorites',
-      title: '收藏',
+      title: t('proxy.favorites'),
       entries: favoriteEntries.value,
       grouped: sidebarPreferences.value.favoritesGrouped,
-      emptyText: '暂无收藏的代理'
+      emptyText: t('proxy.favoritesEmpty')
     }
   ])
 
@@ -63,10 +65,10 @@
   const setFavorite = async (nodeId: string, favorite: boolean) => {
     try {
       if (await proxyStore.setFavorite(nodeId, favorite)) {
-        ElMessage.success(favorite ? '加入收藏成功' : '取消收藏成功')
+        ElMessage.success(favorite ? t('proxy.favoriteSaved') : t('proxy.favoriteRemoved'))
       }
     } catch {
-      ElMessage.error('收藏保存失败，请重试')
+      ElMessage.error(t('proxy.favoriteSaveFailed'))
     }
   }
 
@@ -75,7 +77,7 @@
     if (command === 'category') {
       const newGroup: ProxyGroup = {
         id: crypto.randomUUID(),
-        name: '新分类',
+        name: t('proxy.newGroup'),
         enabled: false,
         type: 'group',
         children: []
@@ -103,7 +105,7 @@
 <template>
   <div class="sidebar">
     <div class="sidebar__header">
-      <div class="sidebar__header-title">代理分组</div>
+      <div class="sidebar__header-title">{{ t('proxy.groupTitle') }}</div>
       <div class="sidebar__header-actions">
         <el-dropdown @command="handleDropdownCommand">
           <el-icon class="sidebar__header-icon sidebar__header-icon--add">
@@ -111,7 +113,9 @@
           </el-icon>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="category"> 创建分类 </el-dropdown-item>
+              <el-dropdown-item command="category">
+                {{ t('proxy.createCategory') }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -137,10 +141,10 @@
             <span class="sidebar__mode" @click.stop @keydown.stop>
               <el-switch
                 :model-value="panel.grouped"
-                :aria-label="`${panel.title}分类模式`"
+                :aria-label="`${panel.title}${t('proxy.categoryMode')}`"
                 :disabled="!userPreferences.ready"
-                active-text="分类"
-                inactive-text="简略"
+                :active-text="t('proxy.categoryMode')"
+                :inactive-text="t('proxy.simpleMode')"
                 size="small"
                 @update:model-value="value => updateMode(panel.id, value === true)"
               />
@@ -150,7 +154,7 @@
             v-if="panel.id === 'selected' && !proxyStore.enabled && panel.entries.length"
             class="sidebar__notice"
           >
-            全局代理已关闭，已勾选项暂未生效
+            {{ t('proxy.globalDisabledNotice') }}
           </p>
           <ProxyQuickPanel
             :entries="panel.entries"
@@ -167,14 +171,14 @@
         </el-collapse-item>
         <el-collapse-item name="config" :disabled="!userPreferences.ready">
           <template #title>
-            <span class="sidebar__panel-title">代理配置</span>
+            <span class="sidebar__panel-title">{{ t('proxy.configTitle') }}</span>
             <span class="sidebar__count">{{ entries.length }}</span>
           </template>
           <!-- 搜索框 -->
           <div class="sidebar__search">
             <el-input
               v-model="filterText"
-              placeholder="搜索分类或代理..."
+              :placeholder="t('proxy.groupOrProxySearch')"
               class="sidebar__search-input"
               clearable
             >

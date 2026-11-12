@@ -6,12 +6,15 @@
   import { useUserPreferencesStore } from './stores/user-preferences'
   import { useProxyStore } from './stores/proxy'
   import { useScriptStore } from './stores/script'
+  import { useI18n } from 'vue-i18n'
+  import type { SupportedLocale } from './locales'
 
   const ConfigTransferDialog = defineAsyncComponent(
     () => import('./components/config-transfer/ConfigTransferDialog.vue')
   )
 
   const userPreferences = useUserPreferencesStore()
+  const { t, locale } = useI18n()
   const activeTab = computed(() => userPreferences.preferences.activeTab)
   const proxyView = ref<InstanceType<typeof ProxyView>>()
   const scriptView = ref<InstanceType<typeof ScriptView>>()
@@ -20,6 +23,13 @@
   const viewsPaused = ref(false)
   const showProxyView = computed(() => !viewsPaused.value && activeTab.value === 'proxy')
   const showScriptView = computed(() => !viewsPaused.value && activeTab.value === 'script')
+  const selectedLocale = computed<SupportedLocale>({
+    get: () => locale.value as SupportedLocale,
+    set: value => {
+      locale.value = value
+      void userPreferences.update({ locale: value })
+    }
+  })
 
   const openTransfer = async () => {
     if (openingTransfer.value) return
@@ -31,7 +41,11 @@
       await nextTick()
       transferVisible.value = true
     } catch (error) {
-      ElMessage.error(`读取配置失败：${error instanceof Error ? error.message : '未知错误'}`)
+      ElMessage.error(
+        t('errors.loadConfigFailed', {
+          message: error instanceof Error ? error.message : t('errors.unknown')
+        })
+      )
     } finally {
       openingTransfer.value = false
     }
@@ -57,29 +71,38 @@
           @tab-change="handleTabChange"
           lazy
         >
-          <el-tab-pane label="代理配置" name="proxy">
+          <el-tab-pane :label="t('tabs.proxy')" name="proxy">
             <template #label>
               <span class="app__tab-label">
                 <el-icon><i-ep-setting /></el-icon>
-                <span>代理配置</span>
+                <span>{{ t('tabs.proxy') }}</span>
               </span>
             </template>
           </el-tab-pane>
-          <el-tab-pane label="JS脚本" name="script">
+          <el-tab-pane :label="t('tabs.script')" name="script">
             <template #label>
               <span class="app__tab-label">
                 <el-icon><i-ep-document /></el-icon>
-                <span>JS脚本</span>
+                <span>{{ t('tabs.script') }}</span>
               </span>
             </template>
           </el-tab-pane>
         </el-tabs>
-        <el-tooltip content="设置">
+        <el-select
+          v-model="selectedLocale"
+          class="app__language"
+          :aria-label="t('actions.language')"
+          size="small"
+        >
+          <el-option value="zh-CN" :label="t('actions.chinese')" />
+          <el-option value="en-US" :label="t('actions.english')" />
+        </el-select>
+        <el-tooltip :content="t('actions.settings')">
           <el-button
             class="app__settings"
             text
             circle
-            aria-label="设置"
+            :aria-label="t('actions.settings')"
             :loading="openingTransfer"
             @click="openTransfer"
           >
@@ -141,6 +164,10 @@
 
   .app__settings {
     flex-shrink: 0;
+  }
+
+  .app__language {
+    flex: 0 0 80px;
   }
 
   .app__tab-label {

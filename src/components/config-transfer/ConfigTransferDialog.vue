@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { computed, nextTick, ref, toRaw } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import { ElMessage, ElMessageBox } from 'element-plus'
   import 'element-plus/es/components/message-box/style/css'
   import { useProxyStore } from '../../stores/proxy'
@@ -22,6 +23,7 @@
   }>()
 
   const proxyStore = useProxyStore()
+  const { t } = useI18n()
   const scriptStore = useScriptStore()
   const userPreferences = useUserPreferencesStore()
   const storage = createStorageAdapter()
@@ -37,7 +39,6 @@
   const reading = ref(false)
   const controlsDisabled = computed(() => busy.value || reading.value)
   const importDisabled = computed(() => controlsDisabled.value || !backup.value)
-
   const countItems = (nodes: (ProxyNode | ScriptNode)[]): number =>
     nodes.reduce(
       (count, node) => count + (node.type === 'group' ? countItems(node.children) : 1),
@@ -46,9 +47,11 @@
   const fileSummary = computed(() => {
     const parts: string[] = []
     if (backup.value?.proxyConfig)
-      parts.push(`代理 ${countItems(backup.value.proxyConfig.groups)} 条`)
+      parts.push(t('transfer.proxySummary', { count: countItems(backup.value.proxyConfig.groups) }))
     if (backup.value?.scriptConfig)
-      parts.push(`脚本 ${countItems(backup.value.scriptConfig.groups)} 条`)
+      parts.push(
+        t('transfer.scriptSummary', { count: countItems(backup.value.scriptConfig.groups) })
+      )
     return parts.join(' · ')
   })
 
@@ -69,9 +72,13 @@
       link.download = `raby-blue-${exportScope.value}-${now.slice(0, 10)}.json`
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
-      ElMessage.success('配置导出成功')
+      ElMessage.success(t('transfer.exportSuccess'))
     } catch (error) {
-      ElMessage.error(`导出失败：${error instanceof Error ? error.message : '未知错误'}`)
+      ElMessage.error(
+        t('transfer.exportFailed', {
+          message: error instanceof Error ? error.message : t('errors.unknown')
+        })
+      )
     }
   }
 
@@ -87,7 +94,7 @@
     try {
       backup.value = parseBackup(await file.text(), file.name)
     } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : '无法读取配置文件'
+      errorMessage.value = error instanceof Error ? error.message : t('transfer.fileReadFailed')
     } finally {
       reading.value = false
       input.value = ''
@@ -105,11 +112,11 @@
     try {
       if (importMode.value === 'replace') {
         await ElMessageBox.confirm(
-          `将覆盖文件中包含的${fileSummary.value}，是否继续？`,
-          '确认覆盖',
+          t('transfer.confirmReplaceMessage', { summary: fileSummary.value }),
+          t('transfer.confirmReplaceTitle'),
           {
-            confirmButtonText: '覆盖导入',
-            cancelButtonText: '取消',
+            confirmButtonText: t('transfer.replace'),
+            cancelButtonText: t('common.cancel'),
             type: 'warning'
           }
         )
@@ -136,10 +143,10 @@
       if (configs.proxyConfig) proxyStore.config = configs.proxyConfig
       if (configs.scriptConfig) scriptStore.config = configs.scriptConfig
       emit('update:modelValue', false)
-      ElMessage.success('配置导入成功')
+      ElMessage.success(t('transfer.importSuccess'))
     } catch (error) {
       if (error !== 'cancel' && error !== 'close') {
-        errorMessage.value = error instanceof Error ? error.message : '配置保存失败'
+        errorMessage.value = error instanceof Error ? error.message : t('transfer.importFailed')
       }
     } finally {
       busy.value = false
@@ -155,7 +162,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="设置"
+    :title="t('actions.settings')"
     width="640px"
     :style="{ maxWidth: 'calc(100vw - 24px)' }"
     :close-on-click-modal="false"
@@ -164,12 +171,12 @@
     @update:model-value="updateVisible"
   >
     <el-tabs v-model="activeSettings">
-      <el-tab-pane label="配置导入与导出" name="transfer" :disabled="loggingBusy" />
-      <el-tab-pane label="日志管理" name="logging" :disabled="controlsDisabled" />
+      <el-tab-pane :label="t('transfer.tabs')" name="transfer" :disabled="loggingBusy" />
+      <el-tab-pane :label="t('transfer.loggingTab')" name="logging" :disabled="controlsDisabled" />
     </el-tabs>
     <LoggingSettings v-if="activeSettings === 'logging'" @busy-change="loggingBusy = $event" />
     <div v-show="activeSettings === 'transfer'" class="config-transfer">
-      <section class="config-transfer__section" aria-label="导入配置">
+      <section class="config-transfer__section" :aria-label="t('transfer.importConfig')">
         <!-- Prettier uses self-closing input tags in Vue templates. -->
         <!-- eslint-disable vue/html-self-closing -->
         <input
@@ -177,26 +184,26 @@
           class="config-transfer__file-input"
           type="file"
           accept=".json,application/json"
-          aria-label="导入配置文件"
+          :aria-label="t('transfer.importFile')"
           @change="selectFile"
         />
         <!-- eslint-enable vue/html-self-closing -->
         <div class="config-transfer__row">
-          <span class="config-transfer__label">导入</span>
+          <span class="config-transfer__label">{{ t('transfer.import') }}</span>
           <el-input
             class="config-transfer__file"
             :model-value="fileName"
             :disabled="controlsDisabled"
             readonly
-            placeholder="选择配置文件"
-            aria-label="配置文件"
+            :placeholder="t('transfer.chooseFile')"
+            :aria-label="t('transfer.file')"
             @click="chooseFile"
             @keydown.enter.prevent="chooseFile"
           >
             <template #append>
               <el-button
                 :disabled="controlsDisabled"
-                aria-label="选择配置文件"
+                :aria-label="t('transfer.chooseFile')"
                 @click.stop="chooseFile"
               >
                 <el-icon><i-ep-folder-opened /></el-icon>
@@ -209,35 +216,35 @@
             :loading="busy"
             @click="importConfig"
           >
-            <el-icon><i-ep-upload /></el-icon>导入文件
+            <el-icon><i-ep-upload /></el-icon>{{ t('transfer.importFileButton') }}
           </el-button>
         </div>
         <el-radio-group
           v-model="importMode"
           class="config-transfer__options"
           :disabled="controlsDisabled"
-          aria-label="导入方式"
+          :aria-label="t('transfer.importMode')"
         >
-          <el-radio value="merge">增量导入</el-radio>
-          <el-radio value="replace">覆盖导入</el-radio>
+          <el-radio value="merge">{{ t('transfer.merge') }}</el-radio>
+          <el-radio value="replace">{{ t('transfer.replace') }}</el-radio>
         </el-radio-group>
         <p v-if="errorMessage" class="config-transfer__error" role="alert">{{ errorMessage }}</p>
       </section>
-      <section class="config-transfer__section" aria-label="导出配置">
+      <section class="config-transfer__section" :aria-label="t('transfer.exportConfig')">
         <div class="config-transfer__row">
-          <span class="config-transfer__label">导出</span>
+          <span class="config-transfer__label">{{ t('transfer.export') }}</span>
           <el-radio-group
             v-model="exportScope"
             class="config-transfer__export-options"
             :disabled="controlsDisabled"
-            aria-label="导出范围"
+            :aria-label="t('transfer.exportScope')"
           >
-            <el-radio value="all">全部导出</el-radio>
-            <el-radio value="proxy">代理配置</el-radio>
-            <el-radio value="script">JS 脚本</el-radio>
+            <el-radio value="all">{{ t('transfer.exportAll') }}</el-radio>
+            <el-radio value="proxy">{{ t('transfer.exportProxy') }}</el-radio>
+            <el-radio value="script">{{ t('transfer.exportScript') }}</el-radio>
           </el-radio-group>
           <el-button type="primary" :disabled="controlsDisabled" @click="exportConfig">
-            <el-icon><i-ep-download /></el-icon>导出文件
+            <el-icon><i-ep-download /></el-icon>{{ t('transfer.exportFile') }}
           </el-button>
         </div>
       </section>

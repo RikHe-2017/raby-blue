@@ -1,4 +1,5 @@
 import type { LogEntry, LogFilter, LogPage, LogPageFilter } from './model'
+import { i18n } from '../locales'
 
 export function createLogDatabase(name = 'raby-blue-logs') {
   let connection: Promise<IDBDatabase> | undefined
@@ -16,7 +17,7 @@ export function createLogDatabase(name = 'raby-blue-logs') {
         store.createIndex('levelTimestamp', ['level', 'timestamp'])
       }
       request.onerror = () => reject(request.error)
-      request.onblocked = () => reject(new Error('日志数据库被其他连接占用'))
+      request.onblocked = () => reject(new Error(i18n.global.t('runtime.logDatabaseBlocked')))
       request.onsuccess = () => {
         const db = request.result
         db.onversionchange = () => {
@@ -38,7 +39,7 @@ export function createLogDatabase(name = 'raby-blue-logs') {
       const transaction = db.transaction('logs', 'readwrite')
       transaction.oncomplete = () => resolve()
       transaction.onabort = transaction.onerror = () =>
-        reject(transaction.error ?? new Error('日志写入失败'))
+        reject(transaction.error ?? new Error(i18n.global.t('runtime.logWriteFailed')))
       action(transaction.objectStore('logs'))
     })
   }
@@ -71,7 +72,7 @@ export function createLogDatabase(name = 'raby-blue-logs') {
         }
         transaction.oncomplete = () => resolve({ entries, total: count.result })
         transaction.onabort = transaction.onerror = () =>
-          reject(transaction.error ?? new Error('日志查询失败'))
+          reject(transaction.error ?? new Error(i18n.global.t('runtime.logQueryFailed')))
       })
     },
     add: (entry: LogEntry) =>
@@ -124,7 +125,7 @@ export function createLogDatabase(name = 'raby-blue-logs') {
         }
         transaction.oncomplete = () => resolve(entries)
         transaction.onabort = transaction.onerror = () =>
-          reject(transaction.error ?? new Error('日志读取失败'))
+          reject(transaction.error ?? new Error(i18n.global.t('runtime.logReadFailed')))
       })
     }
   }

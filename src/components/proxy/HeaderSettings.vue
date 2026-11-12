@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+  import { useI18n } from 'vue-i18n'
   import SaveStatus from '../common/SaveStatus.vue'
   import type { HeaderSetting } from '../../types/proxy'
   import { createHeaderSetting } from '../../proxy/header-settings.ts'
@@ -11,6 +12,7 @@
     direction: 'request' | 'response'
   }>()
   const emit = defineEmits<{ (event: 'update:modelValue', value: HeaderSetting[]): void }>()
+  const { t } = useI18n()
 
   const update = (id: string, patch: Partial<HeaderSetting>) => {
     emit(
@@ -64,17 +66,17 @@
     <div class="header-settings__heading">
       <el-tooltip
         :content="
-          direction === 'request'
-            ? '仅作用于当前代理的直接目标；文档响应替换配置请求头后，目标地址不能再次跳转。仅支持 HTTP 请求，不包含 WebSocket 握手。'
-            : '设置目标返回给浏览器的响应头；删除设置会恢复原响应头。'
+          direction === 'request' ? t('header.requestTooltip') : t('header.responseTooltip')
         "
       >
         <h4 tabindex="0">{{ title }}</h4>
       </el-tooltip>
       <div class="header-settings__actions">
         <SaveStatus :is-saved="isSaved" />
-        <el-tooltip :content="`新增${title === '请求头设置' ? '请求头' : '响应头'}`">
-          <el-button text :aria-label="`新增${title}`" @click="add"
+        <el-tooltip
+          :content="direction === 'request' ? t('header.addRequest') : t('header.addResponse')"
+        >
+          <el-button text :aria-label="t('header.addAria', { title })" @click="add"
             ><el-icon><i-ep-plus /></el-icon
           ></el-button>
         </el-tooltip>
@@ -86,65 +88,69 @@
       row-key="id"
       class="header-settings__table"
     >
-      <el-table-column label="启用" width="54" align="center">
+      <el-table-column :label="t('header.enabled')" width="54" align="center">
         <template #default="{ row }">
           <el-checkbox
             :model-value="row.enabled"
-            :aria-label="`启用 ${row.name || '新头设置'}`"
+            :aria-label="t('proxy.enable', { name: row.name || t('header.newSetting') })"
             @change="(value: string | number | boolean) => update(row.id, { enabled: !!value })"
           />
         </template>
       </el-table-column>
-      <el-table-column label="头名称" min-width="140">
+      <el-table-column :label="t('header.name')" min-width="140">
         <template #default="{ row }">
           <el-autocomplete
             :model-value="row.name"
             :fetch-suggestions="suggestions"
             placeholder="Header Name"
-            aria-label="头名称"
+            :aria-label="t('header.name')"
             @update:model-value="
               (value: string | number) => update(row.id, { name: String(value) })
             "
           />
         </template>
       </el-table-column>
-      <el-table-column label="头值" min-width="140">
+      <el-table-column :label="t('header.value')" min-width="140">
         <template #default="{ row }">
           <el-input
             :model-value="row.value"
             type="textarea"
             :autosize="{ minRows: 1, maxRows: 4 }"
             resize="none"
-            aria-label="头值"
+            :aria-label="t('header.value')"
             spellcheck="false"
             @update:model-value="value => update(row.id, { value })"
           />
         </template>
       </el-table-column>
-      <el-table-column label="处理方式" width="100" align="center">
+      <el-table-column :label="t('header.mode')" width="100" align="center">
         <template #default="{ row }">
           <el-select
             :model-value="row.mode ?? 'overwrite'"
-            aria-label="头处理方式"
+            :aria-label="t('header.mode')"
             @update:model-value="
               value => update(row.id, { mode: value === 'merge' ? 'merge' : 'overwrite' })
             "
           >
-            <el-option label="覆盖已有" value="overwrite" />
-            <el-option label="合并保留" value="merge" />
+            <el-option :label="t('header.overwrite')" value="overwrite" />
+            <el-option :label="t('header.merge')" value="merge" />
           </el-select>
         </template>
       </el-table-column>
       <el-table-column width="44" align="center">
         <template #default="{ row }">
-          <el-tooltip content="删除设置"
-            ><el-button text type="danger" aria-label="删除头设置" @click="remove(row.id)"
+          <el-tooltip :content="t('header.delete')"
+            ><el-button
+              text
+              type="danger"
+              :aria-label="t('header.deleteAria')"
+              @click="remove(row.id)"
               ><el-icon><i-ep-delete /></el-icon></el-button
           ></el-tooltip>
         </template>
       </el-table-column>
     </el-table>
-    <div v-else class="header-settings__empty">暂无设置</div>
+    <div v-else class="header-settings__empty">{{ t('header.empty') }}</div>
     <p v-if="error" class="header-settings__error" role="alert">{{ error }}</p>
   </section>
 </template>

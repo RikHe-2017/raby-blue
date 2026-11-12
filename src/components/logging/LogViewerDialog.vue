@@ -1,11 +1,13 @@
 <script setup lang="ts">
   import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import { LOG_LEVELS, localDateFilter, todayRange } from '../../logging/model'
   import type { LogEntry, LogLevel, LogPage } from '../../logging/model'
   import { requestLogs } from '../../logging/client'
 
   defineProps<{ modelValue: boolean }>()
   const emit = defineEmits<{ (event: 'update:modelValue', value: boolean): void }>()
+  const { t } = useI18n()
   const dates = ref<[string, string]>(todayRange(Date.now()))
   const level = ref<LogLevel>('error')
   const page = ref(1)
@@ -39,7 +41,7 @@
       if (current !== revision) return
       entries.value = []
       total.value = 0
-      error.value = reason instanceof Error ? reason.message : '日志读取失败'
+      error.value = reason instanceof Error ? reason.message : t('logging.operationFailed')
     } finally {
       if (current === revision) loading.value = false
     }
@@ -58,7 +60,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="查看日志"
+    :title="t('logging.view')"
     width="740px"
     :style="{ maxWidth: 'calc(100vw - 24px)' }"
     top="5vh"
@@ -74,15 +76,15 @@
           type="daterange"
           value-format="YYYY-MM-DD"
           :clearable="false"
-          start-placeholder="开始日期"
-          end-placeholder="结束日期"
-          aria-label="日志日期范围"
+          :start-placeholder="t('logging.startDate')"
+          :end-placeholder="t('logging.endDate')"
+          :aria-label="t('logging.dateRangeLabel')"
         />
-        <el-select v-model="level" class="log-viewer__level" aria-label="日志等级">
+        <el-select v-model="level" class="log-viewer__level" :aria-label="t('logging.level')">
           <el-option v-for="item in LOG_LEVELS" :key="item" :value="item" :label="item" />
         </el-select>
-        <el-tooltip content="刷新日志"
-          ><el-button :disabled="loading" aria-label="刷新日志" @click="load()"
+        <el-tooltip :content="t('logging.refresh')"
+          ><el-button :disabled="loading" :aria-label="t('logging.refresh')" @click="load()"
             ><el-icon><i-ep-refresh /></el-icon></el-button
         ></el-tooltip>
       </div>
@@ -92,7 +94,7 @@
         :data="entries"
         row-key="id"
         height="300"
-        empty-text="没有符合条件的日志"
+        :empty-text="t('logging.noResults')"
         class="log-viewer__table"
       >
         <el-table-column type="expand" width="36">
@@ -100,11 +102,11 @@
             <pre class="log-viewer__details">{{ formatDetails(row) }}</pre>
           </template>
         </el-table-column>
-        <el-table-column label="时间" width="170"
+        <el-table-column :label="t('logging.time')" width="170"
           ><template #default="{ row }">{{ formatTime(row.timestamp) }}</template></el-table-column
         >
-        <el-table-column prop="level" label="等级" width="90" />
-        <el-table-column prop="message" label="内容" min-width="150" />
+        <el-table-column prop="level" :label="t('logging.level')" width="90" />
+        <el-table-column prop="message" :label="t('logging.content')" min-width="150" />
       </el-table>
       <el-pagination
         :current-page="page"

@@ -1,5 +1,7 @@
 import { normalizeLoggingPreferences } from '../logging/model'
 import type { LoggingPreferences } from '../logging/model'
+import { defaultLocale, supportedLocales } from '../locales'
+import type { SupportedLocale } from '../locales'
 
 export interface TreeUIState {
   expandedKeys: string[]
@@ -15,6 +17,7 @@ export interface SidebarPreferences {
 
 export interface UserPreferences {
   logging: LoggingPreferences
+  locale: SupportedLocale
   activeTab: 'proxy' | 'script'
   proxySidebar: SidebarPreferences
   proxyUIState: TreeUIState
@@ -30,6 +33,7 @@ export interface ScriptSidebarPreferences {
 
 export interface UserPreferencesPatch {
   logging?: Partial<LoggingPreferences>
+  locale?: UserPreferences['locale']
   activeTab?: UserPreferences['activeTab']
   proxySidebar?: Partial<SidebarPreferences>
   proxyUIState?: Partial<TreeUIState>
@@ -78,8 +82,12 @@ function normalizeTreeState(value: unknown): TreeUIState {
 export function normalizeUserPreferences(value: unknown): UserPreferences {
   const saved = record(value)
   const scriptSidebar = record(saved.scriptSidebar)
+  const locale = supportedLocales.includes(saved.locale as SupportedLocale)
+    ? (saved.locale as SupportedLocale)
+    : defaultLocale
   return {
     logging: normalizeLoggingPreferences(saved.logging),
+    locale,
     activeTab: saved.activeTab === 'script' ? 'script' : 'proxy',
     proxySidebar: normalizeSidebarPreferences(saved.proxySidebar),
     proxyUIState: normalizeTreeState(saved.proxyUIState),

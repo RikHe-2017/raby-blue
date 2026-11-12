@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+  import { useI18n } from 'vue-i18n'
   import ScriptNameEditor from './ScriptNameEditor.vue'
   import ScriptEditor from './ScriptEditor.vue'
   import type { Script } from '../../types/script'
@@ -23,6 +24,7 @@
 
   defineProps<Props>()
   const emit = defineEmits<Emits>()
+  const { t } = useI18n()
 </script>
 
 <template>
@@ -50,7 +52,7 @@
   <div v-else class="script-section script-section--empty">
     <div class="script-section__empty-content">
       <el-icon class="script-section__empty-icon"><i-ep-document /></el-icon>
-      <p class="script-section__empty-text">请选择一个分组或脚本来编辑</p>
+      <p class="script-section__empty-text">{{ t('script.selectForEdit') }}</p>
     </div>
   </div>
 </template>

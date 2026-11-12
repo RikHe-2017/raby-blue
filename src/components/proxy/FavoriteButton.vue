@@ -1,4 +1,6 @@
 <script setup lang="ts">
+  import { useI18n } from 'vue-i18n'
+
   defineProps<{
     favorite: boolean
     name: string
@@ -7,29 +9,40 @@
     partial?: boolean
   }>()
   defineEmits<{ (event: 'change', favorite: boolean): void }>()
+  const { t } = useI18n()
 </script>
 
 <template>
   <el-tooltip
     v-if="readonly"
-    :content="partial ? '部分代理已收藏' : favorite ? '已收藏' : '未收藏'"
+    :content="
+      partial
+        ? t('proxy.partiallyFavorited')
+        : favorite
+          ? t('proxy.favorited')
+          : t('proxy.favorite')
+    "
     placement="top"
   >
     <span
       class="favorite-button favorite-button--readonly"
       :class="{ 'favorite-button--active': favorite || partial }"
       role="img"
-      :aria-label="`${name}：${partial ? '部分代理已收藏' : favorite ? '已收藏' : '未收藏'}`"
+      :aria-label="`${name}：${partial ? t('proxy.partiallyFavorited') : favorite ? t('proxy.favorited') : t('proxy.favorite')}`"
       @click.stop
     >
       <el-icon><i-ep-star-filled v-if="favorite" /><i-ep-star v-else /></el-icon>
     </span>
   </el-tooltip>
-  <el-tooltip v-else :content="favorite ? '取消收藏' : '加入收藏'" placement="top">
+  <el-tooltip
+    v-else
+    :content="favorite ? t('proxy.removeFavorite') : t('proxy.addFavorite')"
+    placement="top"
+  >
     <el-button
       class="favorite-button"
       :class="{ 'favorite-button--active': favorite }"
-      :aria-label="`${favorite ? '取消收藏' : '收藏'} ${name}`"
+      :aria-label="`${favorite ? t('proxy.removeFavorite') : t('proxy.favorite')} ${name}`"
       :aria-pressed="favorite"
       :disabled="disabled"
       text

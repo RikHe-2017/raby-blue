@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { ref, watch } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import SaveStatus from '../common/SaveStatus.vue'
 
   interface Props {
@@ -15,6 +16,7 @@
 
   const props = defineProps<Props>()
   const emit = defineEmits<Emits>()
+  const { t } = useI18n()
 
   const name = ref(props.modelValue)
 
@@ -35,7 +37,7 @@
     <div class="name-editor__header">
       <div class="name-editor__title-wrapper">
         <div class="name-editor__title-content">
-          <h4>{{ isActiveGroup ? '分组名称' : '代理名称' }}</h4>
+          <h4>{{ isActiveGroup ? t('proxy.groupName') : t('proxy.proxyName') }}</h4>
           <SaveStatus :is-saved="isSaved" />
         </div>
       </div>
@@ -43,7 +45,9 @@
     <div class="name-editor__body">
       <el-input
         :model-value="name"
-        :placeholder="isActiveGroup ? '请输入分组名称' : '请输入代理名称'"
+        :placeholder="
+          isActiveGroup ? t('proxy.groupNamePlaceholder') : t('proxy.proxyNamePlaceholder')
+        "
         size="large"
         @update:model-value="
           (val: string) => {

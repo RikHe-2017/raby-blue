@@ -1,14 +1,14 @@
 <script lang="ts" setup>
+  import { useI18n } from 'vue-i18n'
+
   defineProps<{
     isSaved: boolean
   }>()
+  const { t } = useI18n()
 </script>
 
 <template>
-  <el-tooltip
-    content="停止输入后会自动保存，连续输入会延后保存。请等待显示“已保存”后再切换或关闭页面。"
-    :popper-style="{ maxWidth: '240px' }"
-  >
+  <el-tooltip :content="t('common.saveStatusTip')" :popper-style="{ maxWidth: '240px' }">
     <span class="save-status" role="status" aria-live="polite" tabindex="0">
       <el-icon
         class="save-status__icon"
@@ -17,7 +17,7 @@
       >
         <i-ep-check />
       </el-icon>
-      <span>{{ isSaved ? '已保存' : '待保存' }}</span>
+      <span>{{ isSaved ? t('common.saved') : t('common.pendingSave') }}</span>
     </span>
   </el-tooltip>
 </template>

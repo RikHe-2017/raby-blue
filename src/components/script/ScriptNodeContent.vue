@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { computed } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import type { ScriptNode } from '../../types/script'
   import { getScriptFavoriteSummary } from '../../stores/script-tree'
 
@@ -18,7 +19,10 @@
   const allFavorite = computed(
     () => summary.value.scriptCount > 0 && summary.value.favoriteCount === summary.value.scriptCount
   )
-  const favoriteText = computed(() => (allFavorite.value ? '已收藏' : '部分脚本已收藏'))
+  const { t } = useI18n()
+  const favoriteText = computed(() =>
+    allFavorite.value ? t('script.favorite') : t('script.partiallyFavorited')
+  )
 </script>
 
 <template>
@@ -49,8 +53,8 @@
       >
         <el-button
           class="script-node__more"
-          :aria-label="`${data.name}的操作`"
-          title="更多操作"
+          :aria-label="t('common.nameSuffix', { name: data.name })"
+          :title="t('common.moreActions')"
           text
           circle
           size="small"
@@ -63,21 +67,23 @@
         <template #dropdown>
           <el-dropdown-menu>
             <template v-if="data.type === 'group'">
-              <el-dropdown-item command="category">创建分类</el-dropdown-item>
-              <el-dropdown-item command="script">创建脚本</el-dropdown-item>
+              <el-dropdown-item command="category">{{
+                t('script.createCategory')
+              }}</el-dropdown-item>
+              <el-dropdown-item command="script">{{ t('script.createScript') }}</el-dropdown-item>
             </template>
             <template v-else>
-              <el-dropdown-item command="duplicate">复制脚本</el-dropdown-item>
-              <el-dropdown-item command="edit">编辑脚本</el-dropdown-item>
+              <el-dropdown-item command="duplicate">{{ t('script.copyScript') }}</el-dropdown-item>
+              <el-dropdown-item command="edit">{{ t('script.editScript') }}</el-dropdown-item>
             </template>
             <el-dropdown-item
               command="favorite"
               :disabled="!favoritesReady || !summary.scriptCount"
             >
-              {{ allFavorite ? '取消收藏' : '加入收藏' }}
+              {{ allFavorite ? t('script.removeFavorite') : t('script.addFavorite') }}
             </el-dropdown-item>
             <el-dropdown-item command="delete" divided class="script-node__menu-delete">
-              {{ data.type === 'group' ? '删除分组' : '删除脚本' }}
+              {{ data.type === 'group' ? t('script.deleteGroup') : t('script.deleteScript') }}
             </el-dropdown-item>
           </el-dropdown-menu>
         </template>

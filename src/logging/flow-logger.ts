@@ -1,6 +1,7 @@
 import { createContextRegistry } from './context-registry'
 import type { LogLevel } from './model'
 import { logError, logInfo, logWarn } from '../utils/logger'
+import { i18n } from '../locales'
 
 export type ProxyContext = Readonly<{
   kind: 'proxy'
@@ -44,11 +45,11 @@ export function createFlowLogger(
         failure === undefined ? 'info' : 'error',
         proxy
           ? failure === undefined
-            ? '代理请求已处理'
-            : '代理请求失败'
+            ? i18n.global.t('runtime.requestProcessed')
+            : i18n.global.t('runtime.requestFailed')
           : failure === undefined
-            ? '脚本执行完成'
-            : '脚本执行失败',
+            ? i18n.global.t('runtime.scriptCompleted')
+            : i18n.global.t('runtime.scriptFailed'),
         { ...entry.context, ...(failure === undefined ? {} : { reason: failure }) }
       )
     } catch {

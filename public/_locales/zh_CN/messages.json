@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "RabyBlue"
+  },
+  "extensionShortName": {
+    "message": "蓝兔"
+  },
+  "extensionDescription": {
+    "message": "蓝兔是一个为 WEB 研发调试打造的浏览器扩展，可按规则重定向请求、修改请求头和响应头，并管理和执行常用 JavaScript 调试脚本。"
+  }
+}

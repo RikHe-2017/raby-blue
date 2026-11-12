@@ -3,6 +3,7 @@ import type { ProxyMode, ProxyStrategy, RequestPolicy, RequestType } from './Pro
 import { getEnabledProxyRules } from '../document-response-rules.ts'
 import { DEFAULT_REQUEST_POLICY, splitStrategyConfig } from './request-policy.ts'
 import { logWarn } from '../utils/logger.ts'
+import { i18n } from '../locales'
 
 interface TransactionOptions {
   initializationTimeoutMs?: number
@@ -14,7 +15,11 @@ export class ProxyApplicationError extends Error {
   readonly cleanupErrors: string[]
 
   constructor(message: string, cleanupErrors: string[] = []) {
-    super(cleanupErrors.length ? `${message}；清理未完成：${cleanupErrors.join('；')}` : message)
+    super(
+      cleanupErrors.length
+        ? `${message}；${i18n.global.t('runtime.cleanupUnconfirmed', { details: cleanupErrors.join('；') })}`
+        : message
+    )
     this.name = 'ProxyApplicationError'
     this.cleanupErrors = cleanupErrors
   }
@@ -79,7 +84,7 @@ export class ProxyManager {
         withProxyDeadline(
           () => this.strategies[mode].dispose(),
           this.cleanupTimeoutMs,
-          `${mode} 代理清理超时`
+          i18n.global.t('runtime.cleanupTimeout', { mode })
         )
       )
     )
@@ -130,7 +135,11 @@ export class ProxyManager {
               ])
               if (this.cleanupRequired) {
                 const errors = await this.cleanup()
-                if (errors.length) throw new ProxyApplicationError('上次代理清理尚未完成', errors)
+                if (errors.length)
+                  throw new ProxyApplicationError(
+                    i18n.global.t('runtime.previousCleanupPending'),
+                    errors
+                  )
               }
               // Redirects must be ready before documents can load their local resources.
               if (signature !== this.appliedPolicy) await this.strategies.response.dispose()
@@ -148,7 +157,7 @@ export class ProxyManager {
               )
             },
             this.initializationTimeoutMs,
-            '代理配置初始化超时',
+            i18n.global.t('runtime.proxyInitTimeout'),
             () => controller.abort()
           )
         } catch (error) {
@@ -175,7 +184,8 @@ export class ProxyManager {
         this.appliedConfiguration = ''
         this.notifyApplied([], [], this.readActiveTabId ? {} : undefined)
         const errors = await this.cleanup()
-        if (errors.length) throw new ProxyApplicationError('代理停用失败', errors)
+        if (errors.length)
+          throw new ProxyApplicationError(i18n.global.t('runtime.proxyDisableFailed'), errors)
       })
     this.queue = operation
     return operation

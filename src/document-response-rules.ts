@@ -1,4 +1,5 @@
 import type { ProxyConfig, ProxyNode, ProxyRule } from './types/proxy'
+import { i18n } from './locales'
 
 export function getEnabledProxyRules(config: ProxyConfig): ProxyRule[] {
   const visit = (nodes: ProxyNode[]): ProxyRule[] =>
@@ -80,7 +81,7 @@ export function getReplacementRequestBody(request: {
 }) {
   if (!request.postDataEntries?.length) return request.postData
   const parts = request.postDataEntries.map(entry => {
-    if (entry.bytes === undefined) throw new Error('无法完整读取请求正文，已停止转发以避免数据丢失')
+    if (entry.bytes === undefined) throw new Error(i18n.global.t('runtime.bodyReadIncomplete'))
     return Uint8Array.from(atob(entry.bytes), character => character.charCodeAt(0))
   })
   const body = new Uint8Array(parts.reduce((total, part) => total + part.length, 0))

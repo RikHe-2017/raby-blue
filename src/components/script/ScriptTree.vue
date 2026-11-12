@@ -1,5 +1,6 @@
 <script lang="ts" setup>
   import { computed, nextTick, ref, watch } from 'vue'
+  import { useI18n } from 'vue-i18n'
   import type { TreeInstance } from 'element-plus'
   import type { ScriptGroup, ScriptNode } from '../../types/script'
   import ScriptNodeContent from './ScriptNodeContent.vue'
@@ -23,6 +24,7 @@
     (event: 'update:expandedKeys', keys: string[]): void
   }>()
   const treeRef = ref<TreeInstance>()
+  const { t } = useI18n()
   const treeProps = { children: 'children', label: 'name' }
   const sourceNodes = computed(() => {
     const nodes = new Map<string, ScriptNode>()
@@ -82,7 +84,7 @@
     :expand-on-click-node="false"
     highlight-current
     :filter-node-method="filterNode"
-    empty-text="暂无脚本分类"
+    :empty-text="t('script.emptyGroups')"
     @node-expand="node => updateExpansion(node, true)"
     @node-collapse="node => updateExpansion(node, false)"
   >

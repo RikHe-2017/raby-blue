@@ -1,6 +1,7 @@
 export const LOG_LEVELS = ['info', 'warning', 'error'] as const
 export type LogLevel = (typeof LOG_LEVELS)[number]
 export const RETENTION_DAYS = [1, 7, 30, 90, 365] as const
+import { i18n } from '../locales'
 
 export interface LoggingPreferences {
   levels: LogLevel[]
@@ -94,7 +95,7 @@ export function createLogEntry(
     timestamp,
     level,
     source,
-    message: typeof values[0] === 'string' ? values[0] : '运行诊断',
+    message: typeof values[0] === 'string' ? values[0] : i18n.global.t('runtime.diagnostic'),
     details: values.slice(typeof values[0] === 'string' ? 1 : 0, 10).map(value => serialize(value))
   }
 }

@@ -6,6 +6,7 @@ import { getRequestType } from '../proxy/request-policy'
 import { hasHeaderSettings } from '../proxy/header-settings'
 import { changedHeaders } from './model'
 import type { FlowLogger } from './flow-logger'
+import { i18n } from '../locales'
 
 type Session = chrome.debugger.Debuggee & { sessionId?: string }
 interface RequestEvent {
@@ -51,7 +52,7 @@ export function createDebuggerLogObserver(logs: FlowLogger) {
         const id = key(session, event.requestId)
         if (event.canceled || event.errorText === 'net::ERR_ABORTED') logs.cancel(id)
         else if (method === 'Network.loadingFinished') logs.loaded(id)
-        else logs.failed(id, event.errorText ?? '请求加载失败')
+        else logs.failed(id, event.errorText ?? i18n.global.t('runtime.requestLoadFailed'))
         return
       }
       if (method !== 'Network.requestWillBeSent' && method !== 'Fetch.requestPaused') return
@@ -94,7 +95,7 @@ export function createDebuggerLogObserver(logs: FlowLogger) {
         event.responseStatusCode >= 300 &&
         event.responseStatusCode < 400 &&
         event.responseHeaders?.some(header => header.name.toLowerCase() === 'location')
-      if (rejectedRedirect) logs.failed(id, '已配置请求头时请填写不再跳转的最终目标地址')
+      if (rejectedRedirect) logs.failed(id, i18n.global.t('runtime.finalTargetRequired'))
       logs.cancel(id)
     },
     onCommandSucceeded({ session, event, owner, method, params }: DebuggerCommandObservation) {
